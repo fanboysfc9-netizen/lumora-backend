@@ -8,8 +8,8 @@
   - Implement safe retry/fallback behaviour so the API never crashes on model issues
 */
 
-import getSystemPrompt, { Mode } from '../../../../core/cognita/systemPrompt'
-import memoryService from '../../../../core/memory/memory.service'
+import getSystemPrompt, { Mode } from '../core/cognita/systemPrompt'
+import memoryService from '../core/memory/memory.service'
 
 type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string }
 
@@ -277,3 +277,4 @@ class GroqService {
 }
 
 export default new GroqService()
+

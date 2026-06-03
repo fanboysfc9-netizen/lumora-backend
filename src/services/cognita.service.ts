@@ -1,8 +1,8 @@
 import aiService from './groq.service'
 import routerService from './router.service'
-import { formatResponse } from '../../../../core/cognita/responseFormatter'
-import { Mode } from '../../../../core/cognita/systemPrompt'
-import memoryService from '../../../../core/memory/memory.service'
+import { formatResponse } from '../core/cognita/responseFormatter'
+import { Mode } from '../core/cognita/systemPrompt'
+import memoryService from '../core/memory/memory.service'
 
 class CognitaService {
   ai = aiService
@@ -45,3 +45,4 @@ class CognitaService {
 }
 
 export default new CognitaService()
+

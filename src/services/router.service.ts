@@ -1,4 +1,4 @@
-import { classifyMode, Mode } from '../../../../core/cognita/modeClassifier'
+import { classifyMode, Mode } from '../core/cognita/modeClassifier'
 
 export class RouterService {
   classify(text: string): Mode {
@@ -7,3 +7,4 @@ export class RouterService {
 }
 
 export default new RouterService()
+
