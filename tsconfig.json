@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "CommonJS",
+    "rootDir": ".",
+    "outDir": "apps/api/dist",
+    "baseUrl": ".",
+    "paths": {
+      "core/*": ["core/*"]
+    },
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "types": ["node"],
+    "typeRoots": ["apps/api/node_modules/@types"]
+  },
+  "include": ["apps/api/src/**/*", "core/**/*"],
+  "exclude": ["**/node_modules", "**/dist"]
+}

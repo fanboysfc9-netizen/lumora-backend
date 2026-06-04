@@ -1,0 +1,11 @@
+# Ignore local environment files
+/.env
+apps/api/.env
+apps/web/.env
+
+# Node modules
+node_modules/
+
+# Build output
+dist/
+build/

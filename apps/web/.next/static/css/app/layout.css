@@ -1,0 +1,253 @@
+/*!*************************************************************************************************************************************************************************************************************************************************************!*\
+  !*** css ./node_modules/next/dist/build/webpack/loaders/css-loader/src/index.js??ruleSet[1].rules[12].oneOf[12].use[2]!./node_modules/next/dist/build/webpack/loaders/postcss-loader/src/index.js??ruleSet[1].rules[12].oneOf[12].use[3]!./app/globals.css ***!
+  \*************************************************************************************************************************************************************************************************************************************************************/
+:root{
+  --bg:#0f1724;
+  --panel:#0b1220;
+  --muted:#94a3b8;
+  --bubble-user:#0ea5a1;
+  --bubble-assistant:#111827;
+
+  /* Liquid Glass theme variables (lavender + aqua) */
+  --lavender: #C7A4FF;
+  --lavender-glow: rgba(199,164,255,0.22);
+  --aqua: #5EEAD4;
+  --aqua-glow: rgba(94,234,212,0.20);
+  --soft-blue: #7DD3FC;
+  --glass-bg: rgba(255,255,255,0.035);
+  --glass-border: rgba(255,255,255,0.06);
+  --panel-contrast: rgba(12,14,20,0.45);
+  --text: rgba(255,255,255,0.95);
+
+  /* prefer aqua as the accent (avoids legacy blue) */
+  --accent: var(--aqua);
+}
+/* Light theme overrides when .light-theme is applied to <html> */
+.light-theme {
+  --bg: #f6f8fa;
+  --panel: #ffffff;
+  --accent: #0ea5a1;
+  --muted: #64748b;
+  /* Liquid Glass Interface System - globals.css
+     - Glassmorphism, Lavender (primary) & Aqua Green (secondary)
+     - Keeps existing class names so JS remains unchanged
+  */
+
+  --lavender: #C7A4FF;
+  --lavender-glow: rgba(199,164,255,0.18);
+  --aqua: #5EEAD4;
+  --aqua-glow: rgba(94,234,212,0.14);
+  --soft-blue: #7DD3FC;
+  --glass-bg: rgba(255,255,255,0.04);
+  --glass-border: rgba(255,255,255,0.08);
+  --panel-contrast: rgba(12,14,20,0.45);
+  --text: rgba(255,255,255,0.95);
+  --muted: rgba(255,255,255,0.6);
+
+}
+
+  html,body,#root{height:100%;}
+  body{margin:0;font-family:Inter,system-ui,Segoe UI,Arial,Helvetica,sans-serif;color:var(--text);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;}
+
+  /* Animated soft, liquid background (lavender + aqua tints dominate) */
+  body{
+    background: linear-gradient(180deg, rgba(6,6,18,0.98), rgba(6,8,20,0.98));
+    position:relative;overflow-x:hidden;color-scheme:dark;background-color:var(--panel);
+  }
+  body::before{
+    content:"";position:fixed;inset:-18% -18% -18% -18%;z-index:0;pointer-events:none;
+    background:
+      radial-gradient(60rem 60rem at 12% 18%, rgba(199,164,255,0.28), transparent 24%),
+      radial-gradient(56rem 56rem at 86% 78%, rgba(94,234,212,0.24), transparent 24%),
+      linear-gradient(90deg, rgba(12,10,20,0.35), rgba(6,8,16,0.35));
+    mix-blend-mode:screen;filter:blur(32px) saturate(140%);
+    transform-origin:center;
+    animation:liquidMove 20s linear infinite;
+  }
+
+  @keyframes liquidMove{
+    0%{transform:translate3d(-6%, -3%, 0) scale(1)}
+    50%{transform:translate3d(6%, 3%, 0) scale(1.03)}
+    100%{transform:translate3d(-6%, -3%, 0) scale(1)}
+  }
+
+  /* Top-level layout shell */
+  .site{display:flex;flex-direction:column;min-height:100vh;position:relative;z-index:1}
+
+  /* subtle site tint overlay to make glass tones dominate foreground */
+  .site::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background:linear-gradient(90deg, rgba(199,164,255,0.02), rgba(94,234,212,0.02));mix-blend-mode:overlay}
+  .site-header{display:flex;align-items:center;justify-content:center;padding:18px 20px;margin:12px auto;-webkit-backdrop-filter:blur(10px) saturate(120%);backdrop-filter:blur(10px) saturate(120%);background:linear-gradient(180deg, rgba(199,164,255,0.03), rgba(94,234,212,0.02));border-radius:14px;border:1px solid rgba(199,164,255,0.06);box-shadow:0 8px 40px rgba(6,8,20,0.55);max-width:1100px}
+  .site-credit{position:absolute;right:18px;top:18px;font-size:12px;color:var(--muted)}
+
+  .site-main{flex:1 1;display:flex;align-items:stretch;justify-content:center;padding:20px;gap:20px}
+  .site-footer{padding:12px 20px;text-align:center;color:var(--muted);font-size:13px}
+
+  /* Branding header + typewriter */
+  .brand-wrap{display:flex;flex-direction:column;align-items:center;gap:6px}
+  .brand-strap{font-weight:700;color:var(--lavender);font-size:18px;letter-spacing:0.2px;text-shadow:0 8px 36px var(--lavender-glow);opacity:0;transform:translateY(-6px);animation:fadeInUp .9s ease .4s forwards}
+  .brand-type{font-weight:600;color:rgba(255,255,255,0.92);font-size:13px;opacity:0.95}
+  .typewriter{display:inline-block;overflow:hidden;white-space:nowrap;border-right:.12em solid rgba(255,255,255,0.18);box-sizing:content-box;animation:typing 4.2s steps(40,end) .6s forwards,blink-caret .75s step-end .6s infinite}
+
+  @keyframes typing{from{width:0}to{width:100%}}
+  @keyframes blink-caret{50%{border-color:transparent}}
+  @keyframes fadeInUp{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+
+  /* App shell: left sidebar + center chat + right info panel space */
+  .app{display:flex;flex:1 1;gap:20px;width:100%;max-width:1600px}
+  .sidebar{width:260px;padding:14px;box-sizing:border-box;border-radius:14px;background:linear-gradient(180deg, rgba(199,164,255,0.03), rgba(94,234,212,0.02));-webkit-backdrop-filter:blur(10px) saturate(120%);backdrop-filter:blur(10px) saturate(120%);border:1px solid rgba(199,164,255,0.06);box-shadow:0 10px 30px rgba(6,8,20,0.55)}
+  .sidebar h3{margin:0;color:var(--muted)}
+  .subject-btn{background:transparent;border:1px solid rgba(255,255,255,0.04);padding:10px 12px;border-radius:12px;color:var(--muted);cursor:pointer;text-align:left;transition:transform .18s ease,box-shadow .18s ease}
+  .subject-btn:hover{transform:translateY(-4px);box-shadow:0 8px 24px rgba(9,12,20,0.5)}
+  .subject-btn.active{background:linear-gradient(180deg, rgba(94,234,212,0.06), rgba(199,164,255,0.04));color:var(--text);border-color:rgba(255,255,255,0.06)}
+
+  .main{flex:1 1;display:flex;flex-direction:column;align-items:center}
+  .chat-container{display:flex;flex:1 1;width:100%;justify-content:center}
+  .chat-area{flex:1 1;max-width:1200px;width:100%;margin:18px 0;background: linear-gradient(180deg, rgba(199,164,255,0.06), rgba(94,234,212,0.06)), var(--glass-bg);border-radius:22px;display:flex;flex-direction:column;min-height:640px;padding:0;-webkit-backdrop-filter:blur(14px) saturate(130%);backdrop-filter:blur(14px) saturate(130%);border:1px solid rgba(199,164,255,0.06);box-shadow:0 28px 70px rgba(3,6,20,0.6)}
+  .chat-area{flex:1 1;max-width:1200px;width:100%;margin:18px 0;background: linear-gradient(180deg, rgba(199,164,255,0.06), rgba(94,234,212,0.06)), var(--glass-bg);border-radius:22px;display:flex;flex-direction:column;min-height:640px;padding:0;-webkit-backdrop-filter:blur(14px) saturate(130%);backdrop-filter:blur(14px) saturate(130%);border:1px solid rgba(199,164,255,0.06);box-shadow:0 28px 70px rgba(3,6,20,0.6);position:relative;overflow:hidden}
+
+  .chat-header{padding:18px 20px;border-bottom:1px solid rgba(255,255,255,0.03);display:flex;justify-content:space-between;align-items:center}
+  .chat-header strong{color:var(--lavender);text-shadow:0 8px 20px var(--lavender-glow)}
+
+  .progress-container{padding:12px 20px;display:flex;align-items:center;gap:12px}
+  .progress-label{font-size:13px;color:var(--muted)}
+  .progress-bar{flex:1 1;height:10px;background:rgba(255,255,255,0.03);border-radius:999px;overflow:hidden}
+  .progress-fill{height:100%;background:linear-gradient(90deg,var(--lavender),var(--aqua));border-radius:999px;transition:width 500ms ease}
+
+  .chat-messages{flex:1 1;padding:22px 22px 240px 22px;overflow:auto;display:flex;flex-direction:column;gap:12px}
+  .message{display:flex;opacity:1}
+  .message.user{justify-content:flex-end}
+  .message.assistant{justify-content:flex-start}
+
+  /* Glassy chat bubbles */
+  .bubble{max-width:78%;padding:12px 16px;border-radius:28px;margin:6px 0;display:inline-block;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);box-shadow:0 12px 36px rgba(6,8,20,0.55);border:1px solid rgba(255,255,255,0.04);transition:transform .16s ease,box-shadow .16s ease;background:linear-gradient(90deg, rgba(199,164,255,0.12), rgba(94,234,212,0.12));color:inherit}
+  .bubble.user{background:linear-gradient(90deg, rgba(94,234,212,0.14), rgba(199,164,255,0.08));color:#052a25;border:1px solid rgba(94,234,212,0.22);box-shadow:0 14px 46px rgba(94,234,212,0.08), 0 0 36px var(--aqua-glow)}
+  .bubble.assistant{background:linear-gradient(90deg, rgba(199,164,255,0.14), rgba(94,234,212,0.08));color:#0b0520;border:1px solid rgba(199,164,255,0.22);box-shadow:0 14px 46px rgba(199,164,255,0.08), 0 0 36px var(--lavender-glow)}
+  .bubble p, .bubble ul, .bubble ol{margin:0;color:inherit}
+
+  .bubble:hover{transform:translateY(-4px)}
+
+  .whitespace-pre-line{white-space:pre-line}
+
+  .dots{display:inline-block;margin-left:8px;opacity:0.85;animation:dotPulse 1s infinite steps(3,start)}
+  @keyframes dotPulse{0%{opacity:.3}50%{opacity:1}100%{opacity:.3}}
+
+  .chat-input{
+    position:absolute;
+    left:28px;
+    right:28px;
+    bottom:20px;
+    padding:18px;
+    display:flex;
+    gap:14px;
+    align-items:center;
+    justify-content:space-between;
+    height:92px;
+    background: linear-gradient(90deg, rgba(199,164,255,0.10), rgba(94,234,212,0.08));
+    -webkit-backdrop-filter: blur(16px) saturate(190%);
+    backdrop-filter: blur(16px) saturate(190%);
+    border: 1px solid rgba(199,164,255,0.06);
+    border-radius:22px;
+    box-shadow: 0 28px 60px rgba(2,6,16,0.55);
+    z-index:2;
+    max-width:calc(100% - 56px);
+    margin:0 auto;
+  }
+  .chat-input .chat-input-field,
+  .chat-input input{
+    flex:1 1;
+    padding:18px 20px !important;
+    height:56px !important;
+    border-radius:14px !important;
+    border: 1px solid rgba(255,255,255,0.05) !important;
+    background: linear-gradient(90deg, rgba(255,255,255,0.025), rgba(255,255,255,0.01)) !important;
+    color:var(--text) !important;
+    outline:none !important;
+    box-shadow: inset 0 4px 18px rgba(0,0,0,0.36);
+    font-size:17px;
+    caret-color:var(--aqua);
+  }
+
+  .chat-input input::placeholder{color:rgba(255,255,255,0.6);opacity:0.95;animation:placeholderGlow 3.6s ease-in-out infinite}
+  @keyframes placeholderGlow{0%{color:rgba(255,255,255,0.55)}50%{color:rgba(199,164,255,0.88)}100%{color:rgba(255,255,255,0.55)}}
+  .send-btn{
+    background: linear-gradient(90deg, rgba(199,164,255,0.22), rgba(94,234,212,0.22));
+    color:#06111a;
+    padding:12px 20px;
+    border-radius:14px;
+    border:none;
+    font-weight:800;
+    cursor:pointer;
+    box-shadow:0 12px 40px rgba(15,20,40,0.6), 0 0 18px rgba(199,164,255,0.06);
+    transition:transform .12s ease, box-shadow .18s ease, filter .12s ease;
+    min-width:84px;
+  }
+  .send-btn:hover{transform:translateY(-3px) scale(1.02);box-shadow:0 18px 48px rgba(15,20,40,0.65), 0 0 26px rgba(199,164,255,0.12)}
+  .send-btn:active{transform:translateY(-1px) scale(.99)}
+  .send-btn[disabled]{opacity:0.45;cursor:not-allowed;transform:none;box-shadow:none}
+
+  /* subtle pulsing glow for send button */
+  @keyframes sendPulse{0%{box-shadow:0 12px 40px rgba(15,20,40,0.55), 0 0 8px rgba(199,164,255,0.06)}50%{box-shadow:0 18px 48px rgba(15,20,40,0.65), 0 0 26px rgba(199,164,255,0.16)}100%{box-shadow:0 12px 40px rgba(15,20,40,0.55), 0 0 8px rgba(199,164,255,0.06)}}
+  .send-btn.pulse{animation:sendPulse 3.6s ease-in-out infinite}
+  /* mic button styled as liquid glass */
+  .mic-btn{background:linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);color:var(--muted);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;box-shadow:0 8px 20px rgba(6,8,20,0.45);transition:transform .12s ease, box-shadow .12s ease}
+  .mic-btn:hover{transform:translateY(-3px);box-shadow:0 16px 36px rgba(6,8,20,0.5)}
+  /* Mic states matching Liquid Glass theme */
+  .mic-btn.recording, .mic-btn.listening{background:linear-gradient(90deg, rgba(199,164,255,0.12), rgba(94,234,212,0.10));color:var(--lavender);border:1px solid rgba(199,164,255,0.12);box-shadow:0 8px 30px rgba(94,234,212,0.12), 0 0 36px var(--aqua-glow);animation:micGlow 1.6s ease-in-out infinite}
+  .mic-btn.processing{background:linear-gradient(90deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02));color:var(--muted);border-color:rgba(255,255,255,0.04);box-shadow:0 8px 20px rgba(6,8,20,0.45);opacity:0.95}
+  .mic-btn.error{background:linear-gradient(90deg, rgba(255,90,90,0.06), rgba(255,60,60,0.02));color:#ff6b6b;border-color:rgba(255,90,90,0.12);box-shadow:0 0 34px rgba(255,90,90,0.12)}
+  @keyframes micGlow{0%{transform:scale(1);box-shadow:0 8px 30px rgba(94,234,212,0.08), 0 0 18px rgba(199,164,255,0.06)}50%{transform:scale(1.06);box-shadow:0 14px 50px rgba(94,234,212,0.14), 0 0 40px rgba(199,164,255,0.14)}100%{transform:scale(1);box-shadow:0 8px 30px rgba(94,234,212,0.08), 0 0 18px rgba(199,164,255,0.06)}}
+
+  /* Waveform visualizer next to mic button */
+  .mic-wrapper{display:flex;align-items:center;gap:10px}
+  .waveform{display:flex;gap:4px;align-items:end;padding-left:6px;width:96px;height:48px;overflow:hidden;transition:opacity .28s ease,transform .28s ease;opacity:0;transform:translateY(6px)}
+  .waveform.listening{opacity:1;transform:translateY(0)}
+  .waveform.processing{opacity:0.7;transform:translateY(0)}
+  .waveform.error{opacity:1}
+  .waveform .bar{flex:1 1;width:4px;background:linear-gradient(180deg,var(--lavender),var(--aqua));border-radius:4px;height:6px;transition:height .06s linear,opacity .06s linear;box-shadow:0 6px 14px rgba(6,8,20,0.45),0 0 8px rgba(94,234,212,0.06)}
+
+  /* small state label for screen readers / succinct UX */
+  .mic-status{font-size:12px;color:var(--muted);margin-left:6px}
+
+  /* welcome hero centered */
+  .welcome-hero{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:4;pointer-events:none}
+  .welcome-card{pointer-events:auto;text-align:center;padding:28px 36px;border-radius:14px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));-webkit-backdrop-filter:blur(16px) saturate(140%);backdrop-filter:blur(16px) saturate(140%);border:1px solid rgba(199,164,255,0.06);box-shadow:0 40px 80px rgba(2,6,16,0.6)}
+  .welcome-title{font-family:Poppins, Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; font-size:clamp(28px,6vw,56px);font-weight:900;color:var(--lavender);letter-spacing:0.6px;text-shadow:0 18px 64px var(--lavender-glow)}
+  .welcome-sub{margin-top:8px;color:var(--muted);font-weight:700}
+  .welcome-cta{margin-top:14px;color:var(--aqua);font-weight:700}
+
+  /* Hide topics UI to focus on chat (user requested topics removed) */
+  .topics-grid, .topics, .home-topics, .home-root .topics-grid { display: none !important; height: 0 !important; margin: 0 !important; padding: 0 !important; overflow: hidden !important; }
+
+  .mode-btn{padding:8px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:var(--muted);cursor:pointer}
+  .mode-btn.active{background:linear-gradient(180deg, rgba(199,164,255,0.06), rgba(94,234,212,0.04));color:var(--text);border-color:rgba(255,255,255,0.06)}
+  .theme-toggle{padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:var(--muted);cursor:pointer}
+
+  /* Right info / status panel (keeps existing class but restyled as floating glass) */
+  .stats-panel{position:relative;min-width:280px;padding:16px;border-radius:14px;background:linear-gradient(180deg, rgba(199,164,255,0.04), rgba(94,234,212,0.03));-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border:1px solid rgba(199,164,255,0.06);box-shadow:0 18px 50px rgba(6,8,20,0.6)}
+  .stats-panel h4{margin:0 0 8px 0;color:var(--muted)}
+  .stat-row{display:flex;justify-content:space-between;margin:8px 0;color:var(--muted)}
+  .subject-bar{height:8px;background:rgba(255,255,255,0.03);border-radius:999px;overflow:hidden}
+  .subject-fill{height:100%;background:linear-gradient(90deg,var(--lavender),var(--aqua));transition:width 700ms ease}
+
+  /* Tiny helper utilities */
+  .muted{color:var(--muted)}
+  .small{font-size:13px}
+
+  /* small responsive rules */
+  @media (max-width:980px){
+    .sidebar{display:none}
+    .stats-panel{display:none}
+    .chat-area{max-width:100%;border-radius:14px}
+  }
+
+.home-footer{text-align:center;color:#64748b;margin-top:28px;padding-bottom:18px}
+
+@media (max-width:900px){
+  .topics-grid{grid-template-columns:repeat(2,1fr)}
+}
+@media (max-width:560px){
+  .topics-grid{grid-template-columns:repeat(1,1fr)}
+  .home-root{padding:20px}
+}
+
+
