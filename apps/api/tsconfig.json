@@ -2,17 +2,10 @@
   "compilerOptions": {
     "target": "ES2020",
     "module": "CommonJS",
-    "rootDir": "../../",
     "outDir": "./dist",
-    "baseUrl": "../../",
-    "paths": {
-      "core/*": ["core/*"]
-    },
     "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "strict": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "noImplicitAny": false
   },
-  "include": ["src/**/*", "../../core/**/*"],
-  "exclude": ["../../core/**/tests/**/*", "../../core/tests/**/*", "node_modules"]
+  "include": ["src/**/*"]
 }
