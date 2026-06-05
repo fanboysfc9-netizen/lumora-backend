@@ -13,5 +13,6 @@
     "strict": true,
     "skipLibCheck": true
   },
-  "include": ["src/**/*", "../../core/**/*"]
+  "include": ["src/**/*", "../../core/**/*"],
+  "exclude": ["../../core/**/tests/**/*", "../../core/tests/**/*", "node_modules"]
 }
