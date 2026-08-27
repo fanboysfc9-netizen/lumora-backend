@@ -1,13 +1,19 @@
 import { Router, Request, Response } from 'express'
 import cognitaService from '../services/cognita.service'
-import memoryService from '../core/memory/memory.service'
+import memoryService from '../../../../core/memory/memory.service'
+import authenticateSupabaseRequest from '../middleware/supabase-auth.middleware'
 
 const router = Router()
 
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', authenticateSupabaseRequest, async (req: Request, res: Response) => {
   try {
-    const { userId, message, conversationId } = req.body
-    if (!userId || !message) return res.status(400).json({ error: 'userId and message are required' })
+    const { message, conversationId } = req.body
+    const userId = req.auth?.userId
+    if (!userId) return res.status(401).json({ error: 'authentication required' })
+    if (!message) return res.status(400).json({ error: 'message is required' })
+    if (conversationId && !(await memoryService.conversationBelongsToUser(String(conversationId), userId))) {
+      return res.status(404).json({ error: 'conversation not found' })
+    }
 
     const bodyMode = req.body?.mode as string | undefined
 
@@ -33,11 +39,14 @@ router.post('/', async (req: Request, res: Response) => {
   }
 })
 
-router.get('/history', async (req: Request, res: Response) => {
+router.get('/history', authenticateSupabaseRequest, async (req: Request, res: Response) => {
   try {
-    const userId = String(req.query.userId || '')
+    const userId = req.auth?.userId
     const conversationId = req.query.conversationId ? String(req.query.conversationId) : undefined
-    if (!userId) return res.status(400).json({ error: 'userId is required' })
+    if (!userId) return res.status(401).json({ error: 'authentication required' })
+    if (conversationId && !(await memoryService.conversationBelongsToUser(conversationId, userId))) {
+      return res.status(404).json({ error: 'conversation not found' })
+    }
     const history = await memoryService.getConversationHistory(userId, conversationId, 200)
     return res.json({ ok: true, history })
   } catch (err: any) {

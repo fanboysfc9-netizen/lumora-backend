@@ -2,6 +2,18 @@ import { AdaptationDecision, LearningProfile, CognitiveState, TeachingMode } fro
 import { clamp } from './scoringSystem'
 
 export function decideAdaptation(profile: LearningProfile, state: CognitiveState, context?: any): AdaptationDecision {
+  if (context?.requestMode === 'conversational') {
+    return {
+      teachingMode: 'quick_answer',
+      explanationDepth: 0.25,
+      pacing: 'fast',
+      exampleDensity: 0.2,
+      challengeLevel: 0,
+      simplificationIntensity: 0,
+      notes: 'Conversational request'
+    }
+  }
+
   // Base values informed by profile
   let teachingMode: TeachingMode = 'guided_breakdown'
   let explanationDepth = clamp(profile.preferredExplanationDepth)

@@ -1,6 +1,10 @@
 "use client"
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
+import { useSupabaseSession } from '../hooks/use-supabase-session'
+import { useAccountState } from '../hooks/use-account-state'
+import { ApiAuthenticationError, authenticatedFetch } from '../utils/api-client'
+import { userScopedStorageKey } from '../utils/user-scoped-state'
 
 type Msg = { role: 'user' | 'assistant' | 'system'; text: string; id?: string; subject?: string; mode?: string; targetId?: string }
 
@@ -23,6 +27,12 @@ function normalizeQuestion(s: string) {
 }
 
 export default function Page() {
+  const { session, loading: authLoading, error: authError, signIn, signOut } = useSupabaseSession()
+  useAccountState(session, API_URL!)
+  const [authEmail, setAuthEmail] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
+  const [authFormError, setAuthFormError] = useState<string | null>(null)
+  const previousUserIdRef = useRef<string | null>(null)
   const [theme, setTheme] = useState<string>(() => {
     try { return localStorage.getItem('lumora_theme') || 'dark' } catch { return 'dark' }
   })
@@ -123,16 +133,15 @@ export default function Page() {
   function stopVADMonitor() {
     if (vadIntervalRef.current) { clearInterval(vadIntervalRef.current); vadIntervalRef.current = null }
   }
-  const userId = 'demo-user'
   async function sendVoiceMetrics(extra: Record<string, any> = {}) {
     try {
       if (!API_URL) return
+      if (!session?.access_token) return
       if (!voiceTimingRef.current || Object.keys(voiceTimingRef.current).length === 0) return
-      const payload = { client: 'web', userId, metrics: voiceTimingRef.current, extra }
+      const payload = { client: 'web', metrics: voiceTimingRef.current, extra }
       // best-effort POST; do not await
-      fetch(`${API_URL}/admin/voice-metrics`, {
+      authenticatedFetch(`${API_URL}/admin/voice-metrics`, session, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       }).catch((err) => console.warn('voice metrics post failed', err))
     } catch (e) { console.warn('sendVoiceMetrics failed', e) }
@@ -160,8 +169,12 @@ export default function Page() {
 
   useEffect(() => {
     async function load() {
+      if (!session) {
+        setMessages([])
+        return
+      }
       try {
-        const res = await fetch(`${API_URL!}/history?userId=${encodeURIComponent(userId)}`)
+        const res = await authenticatedFetch(`${API_URL!}/history`, session)
         const data = await res.json()
         if (data?.ok && Array.isArray(data.history)) {
           setMessages(data.history.map((m: any) => ({ role: m.role, text: m.text })))
@@ -180,21 +193,36 @@ export default function Page() {
       }
     }
     load()
-  }, [search])
+  }, [search, session])
+
+  useEffect(() => {
+    const nextUserId = session?.user.id || null
+    if (previousUserIdRef.current !== null && previousUserIdRef.current !== nextUserId) {
+      setMessages([])
+      setInput('')
+      setStats(defaultStats)
+    }
+    previousUserIdRef.current = nextUserId
+  }, [session?.user.id])
 
   useEffect(() => {
     try { localStorage.setItem('lumora_mode', activeMode) } catch {}
   }, [activeMode])
 
   useEffect(() => {
+    if (!session?.user.id) {
+      setStats(defaultStats)
+      return
+    }
     try {
-      const s = localStorage.getItem('lumora_stats')
+      const s = localStorage.getItem(userScopedStorageKey('lumora_stats', session.user.id)!)
       if (s) setStats(JSON.parse(s))
+      else setStats(defaultStats)
     } catch (e) {}
     try {
       document.documentElement.classList.toggle('light-theme', theme === 'light')
     } catch (e) {}
-  }, [])
+  }, [session?.user.id])
 
   useEffect(() => {
     try { localStorage.setItem('lumora_theme', theme); document.documentElement.classList.toggle('light-theme', theme === 'light') } catch {}
@@ -521,7 +549,7 @@ export default function Page() {
     setInput('')
     const userMsg: Msg = { role: 'user', text, id: `u-${Date.now()}`, subject, mode: activeMode }
     setMessages((m) => [...m, userMsg])
-    try { setStats((s) => { const ns = { ...s, totalMessages: s.totalMessages + 1 }; localStorage.setItem('lumora_stats', JSON.stringify(ns)); return ns }) } catch {}
+    try { setStats((s) => { const ns = { ...s, totalMessages: s.totalMessages + 1 }; const key = userScopedStorageKey('lumora_stats', session?.user.id); if (key) localStorage.setItem(key, JSON.stringify(ns)); return ns }) } catch {}
 
     const local = interceptSpecialQuestions(text)
     if (local) {
@@ -536,10 +564,9 @@ export default function Page() {
     setIsThinking(true)
     try {
       try { markTiming('requestSent') } catch (e) {}
-      const res = await fetch(API_URL!, {
+      const res = await authenticatedFetch(API_URL!, session, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, message: text, mode: activeMode, subject, skill: computeSkillForSubject(subject) })
+        body: JSON.stringify({ message: text, mode: activeMode, subject, skill: computeSkillForSubject(subject) })
       })
       const data = await res.json()
       try { markTiming('responseReceived') } catch (e) {}
@@ -558,14 +585,17 @@ export default function Page() {
       }
     } catch (err) {
       console.error(err)
-      setMessages((m) => [...m, { role: 'assistant', text: 'Network error' }])
+      setMessages((m) => [...m, { role: 'assistant', text: err instanceof ApiAuthenticationError ? err.message : 'Network error' }])
     } finally {
       setIsThinking(false)
     }
   }
 
   function saveStats(ns: any) {
-    try { localStorage.setItem('lumora_stats', JSON.stringify(ns)) } catch {}
+    try {
+      const key = userScopedStorageKey('lumora_stats', session?.user.id)
+      if (key) localStorage.setItem(key, JSON.stringify(ns))
+    } catch {}
     setStats(ns)
   }
 
@@ -594,6 +624,35 @@ export default function Page() {
 
   const overallProgress = stats.responses ? Math.round(((stats.understood || 0) / stats.responses) * 100) : 0
 
+  async function handleSignIn(event: React.FormEvent) {
+    event.preventDefault()
+    setAuthFormError(null)
+    const result = await signIn(authEmail.trim(), authPassword)
+    if (result.error) setAuthFormError(result.error.message)
+    else setAuthPassword('')
+  }
+
+  if (authLoading) {
+    return <div className="app"><main className="main"><div className="welcome-card">Checking authentication...</div></main></div>
+  }
+
+  if (!session) {
+    return (
+      <div className="app">
+        <main className="main">
+          <form className="welcome-card" onSubmit={handleSignIn}>
+            <div className="welcome-title">Sign in to Lumora</div>
+            <div className="welcome-sub">{authError || 'Use your Supabase account to continue.'}</div>
+            <input aria-label="Email" type="email" value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} placeholder="Email" required />
+            <input aria-label="Password" type="password" value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} placeholder="Password" required />
+            {authFormError && <div role="alert">{authFormError}</div>}
+            <button className="send-btn" type="submit">Sign in</button>
+          </form>
+        </main>
+      </div>
+    )
+  }
+
   return (
     <div className="app">
       <main className="main" style={{ width: '100%' }}>
@@ -615,6 +674,7 @@ export default function Page() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 8 }}>
                   <button className="theme-toggle" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} title="Toggle theme">{theme === 'dark' ? '☀️' : '🌙'}</button>
                   <button className="mode-btn" onClick={() => setShowStats((s) => !s)}>{showStats ? 'Close Stats' : 'Stats'}</button>
+                  <button className="mode-btn" onClick={() => signOut()}>Sign out</button>
                 </div>
               </div>
             </div>

@@ -1,4 +1,6 @@
 import { decideAdaptation } from '../adaptationEngine'
+import { isLowIntentConversational } from '../conversationalGuard'
+import { toSystemInstruction } from '../promptAdapter'
 import { LearningProfile, CognitiveState } from '../types'
 
 function assert(cond: boolean, msg?: string) {
@@ -34,6 +36,17 @@ export function run() {
   const state2: CognitiveState = { confusionLevel: 0.05, confidenceLevel: 0.9, overloadRisk: 0, engagementLevel: 0.9, challengeReadiness: 0.85 }
   const d2 = decideAdaptation(profile, state2, {})
   assert(d2.teachingMode === 'challenge_mode', 'Expected challenge_mode for high confidence/readiness')
+
+  // Conversational requests bypass teaching structure and simplification.
+  const conversational = decideAdaptation(profile, state1, { requestMode: 'conversational' })
+  assert(isLowIntentConversational('hi'), 'Expected hi to be low-intent conversational input')
+  assert(conversational.teachingMode === 'quick_answer', 'Expected conversational input to avoid guided_breakdown')
+  assert(conversational.simplificationIntensity === 0, 'Expected conversational input to disable simplification')
+  assert(isLowIntentConversational('hello'), 'Expected hello to be low-intent conversational input')
+  assert(!toSystemInstruction(conversational, profile).includes('simplified explanations'), 'Expected hello to avoid simplification instructions')
+  assert(isLowIntentConversational('thanks'), 'Expected thanks to be low-intent conversational input')
+  assert(!isLowIntentConversational('What is photosynthesis?'), 'Expected a definition request to remain instructional')
+  assert(!isLowIntentConversational('Explain photosynthesis and compare it with cellular respiration.'), 'Expected complex learning request to remain instructional')
 
   console.log('[PASS] adaptationEngine')
 }

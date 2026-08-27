@@ -22,22 +22,35 @@ try {
   Groq = null
 }
 
+const SUPPORTED_GROQ_MODELS = [
+  'openai/gpt-oss-20b',
+  'openai/gpt-oss-120b',
+  'meta-llama/llama-4-scout-17b-16e-instruct',
+  'llama-3.3-70b-versatile',
+  'llama-3.1-70b-versatile',
+  'llama-3.1-8b-instant'
+] as const
+
 // Preferred model mapping (logical names -> preferred model id)
 export function getModel(mode: string): string {
   switch (mode) {
     case 'standard':
-      return 'llama-3.1-70b-versatile'
+      return 'openai/gpt-oss-20b'
     case 'coding':
-      return 'llama-3.1-70b-versatile'
+      return 'meta-llama/llama-4-scout-17b-16e-instruct'
     case 'creative':
-      return 'mixtral-8x7b-32768'
+      return 'openai/gpt-oss-120b'
     case 'fast':
-      return 'llama-3.1-8b-instant'
+      return 'openai/gpt-oss-20b'
     case 'research':
-      return 'llama-3.1-70b-versatile'
+      return 'meta-llama/llama-4-scout-17b-16e-instruct'
     default:
-      return 'llama-3.1-70b-versatile'
+      return 'openai/gpt-oss-20b'
   }
+}
+
+function getFallbackModelList(): string[] {
+  return [...SUPPORTED_GROQ_MODELS]
 }
 
 type ErrorClassification = 'auth' | 'model' | 'quota' | 'network' | 'unknown'
@@ -102,15 +115,19 @@ class GroqService {
   }
 
   private resolveModel(preferred: string) {
-    if (!this.availableModels || this.availableModels.length === 0) return preferred
-    if (this.availableModels.includes(preferred)) return preferred
+    const candidatePool = [...new Set([preferred, ...getFallbackModelList(), ...(this.availableModels || [])])]
 
-    // safe fallback preference
-    const fallbackPreferred = 'llama-3.1-8b-instant'
-    if (this.availableModels.includes(fallbackPreferred)) return fallbackPreferred
+    for (const candidate of candidatePool) {
+      if (!candidate) continue
+      if (this.availableModels && this.availableModels.length > 0 && this.availableModels.includes(candidate)) {
+        return candidate
+      }
+      if (candidate === preferred) {
+        return preferred
+      }
+    }
 
-    // finally, use whatever is available
-    return this.availableModels[0] || preferred
+    return candidatePool[0] || preferred
   }
 
   private classifyError(errMsg: string): ErrorClassification {
@@ -198,6 +215,19 @@ class GroqService {
       max_tokens: isResearch ? 2000 : 1200
     }
 
+    const diagnosticContext = {
+      provider: 'groq',
+      requestedModel: preferred,
+      resolvedModel: primary,
+      availableModels: this.availableModels.slice(0, 12),
+      mode,
+      env: {
+        hasGroqKey: Boolean(this.apiKey),
+        groqKeyLength: this.apiKey?.length || 0,
+        nodeEnv: process.env.NODE_ENV || 'development'
+      }
+    }
+
     // Attempt primary model
     try {
       const chatCompletion = await this.client.chat.completions.create(generationConfig)
@@ -209,7 +239,14 @@ class GroqService {
 
       const cls = this.classifyError(message)
       const steps = this.debugStepsForClassification(cls, primary)
-      const diagnostic = { classification: cls, message, modelTried: primary, suggestedSteps: steps }
+      const diagnostic = {
+        classification: cls,
+        message,
+        modelTried: primary,
+        suggestedSteps: steps,
+        provider: 'groq',
+        context: diagnosticContext
+      }
 
       // Build ordered fallback candidate list (preferred fallback first, then other available models)
       const tried: any[] = []
@@ -238,7 +275,14 @@ class GroqService {
           console.error('[GroqService] fallback model call failed for', cand, message2)
           const cls2 = this.classifyError(message2)
           const steps2 = this.debugStepsForClassification(cls2, cand)
-          const diagnostic2 = { classification: cls2, message: message2, modelTried: cand, suggestedSteps: steps2 }
+          const diagnostic2 = {
+            classification: cls2,
+            message: message2,
+            modelTried: cand,
+            suggestedSteps: steps2,
+            provider: 'groq',
+            context: { ...diagnosticContext, resolvedModel: cand }
+          }
           fallbacksTried.push(diagnostic2)
         }
       }

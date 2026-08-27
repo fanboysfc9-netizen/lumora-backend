@@ -11,6 +11,15 @@ npm run dev
 ```
 
 The frontend must be built with `NEXT_PUBLIC_API_URL` set to your backend chat endpoint (for example: `https://your-backend.example.com/api/chat`).
+
+Supabase browser authentication requires these public, browser-safe variables:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-public-anon-key
+```
+
+Never expose Supabase service-role credentials, Groq keys, Firebase admin credentials, or other server secrets through `NEXT_PUBLIC_*` variables. The API uses server-only `SUPABASE_URL` and `SUPABASE_ANON_KEY` values to validate access tokens.
 Set this variable at build time (for example in `.env.production`) so the static export will include the correct API URL.
 
 Important: a production build that contains a `localhost` API URL will bake that URL into the static files and break the deployed site (the browser will attempt to call `http://localhost:4000` on end-user devices). To prevent this, a prebuild check is included.

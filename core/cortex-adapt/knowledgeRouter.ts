@@ -254,7 +254,7 @@ export async function fetchAndSummarize(userInput: string): Promise<SerpSummary 
     const structured = structuredCleanResults(raw)
 
     // Run deterministic refinement on the raw web results
-    let refined = null
+    let refined: ReturnType<typeof refineData> | null = null
     try {
       refined = refineData({ query: userInput, rawWebResults: rawList, rawAiContext: undefined })
     } catch (re) {

@@ -2,11 +2,13 @@ import './registerCoreAlias'
 import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
+import { getAllowedOrigins, isOriginAllowed } from './cors'
 
 dotenv.config()
 import chatRouter from './routes/chat.route'
 import lumoraCoreRouter from './routes/lumora-core.route'
 import adminRouter from './routes/admin.route'
+import accountRouter from './routes/account.route'
 
 // Fail fast if required env missing (do this before starting the server)
 if (!process.env.GROQ_API_KEY) {
@@ -16,14 +18,17 @@ if (!process.env.GROQ_API_KEY) {
 
 const app = express()
 
-// CORS: restrict to Firebase hosting domains in production, allow localhost in development
-const firebaseProject = process.env.FIREBASE_PROJECT || 'YOUR_PROJECT'
-const allowedOrigins = process.env.NODE_ENV === 'production'
-  ? [`https://${firebaseProject}.web.app`, `https://${firebaseProject}.firebaseapp.com`]
-  : ['http://localhost:3000', 'http://localhost:4000']
+const allowedOrigins = getAllowedOrigins()
 
 app.use(cors({
-  origin: allowedOrigins,
+  origin: (origin, callback) => {
+    if (!origin || isOriginAllowed(origin, allowedOrigins)) {
+      callback(null, true)
+      return
+    }
+
+    callback(new Error('CORS policy: origin not allowed'))
+  },
   credentials: true
 }))
 
@@ -32,6 +37,7 @@ app.use(express.json())
 app.use('/api/chat', chatRouter)
 app.use('/api/lumora-core', lumoraCoreRouter)
 app.use('/api/admin', adminRouter)
+app.use('/api/account', accountRouter)
 
 app.get('/', (_req, res) => res.json({ ok: true, service: 'Lumora Cognita Backend' }))
 app.get('/health', (_req, res) => res.status(200).json({

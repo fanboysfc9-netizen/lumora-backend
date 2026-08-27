@@ -21,6 +21,8 @@ import { predictBeforeResponse, adjustDecisionWithPrediction, simulateUserReacti
 import globalEngine from 'core/cortex-adapt/globalEngine'
 import { adjustDecisionWithGlobalTrends } from 'core/cortex-adapt/ruleEvolution'
 import knowledgeRouter from 'core/cortex-adapt/knowledgeRouter'
+import { isLowIntentConversational } from 'core/cortex-adapt/conversationalGuard'
+import { LUMORA_SYSTEM_PROMPT } from '../prompts/lumora.system.prompt'
 
 class CognitaService {
   ai = aiService
@@ -45,11 +47,15 @@ class CognitaService {
     }
 
     const mode = mapMode(providedMode)
+    const lowIntentConversational = isLowIntentConversational(message)
 
     // Delegate AI request and memory handling to groq.service
     // --- Lumora Core pre-processing ---
     const coreInput: LumoraCoreInput = { question: message, userLevel: 'average', maxLines: undefined, strictness: 'moderate' }
     const corePrompt = lumoraCore.buildPrompt(coreInput)
+    if (lowIntentConversational) {
+      corePrompt.prompt = `${LUMORA_SYSTEM_PROMPT}\n\nFor this conversational message, respond naturally and concisely. Do not use numbered steps, formal sections, or teaching scaffolding unless the user asks for it.`
+    }
 
     console.log('USER INPUT:', message)
     console.log('CORE PROMPT (base):', corePrompt.prompt)
@@ -65,7 +71,7 @@ class CognitaService {
       const pPromise = getOrCreateProfile(userId)
       // race profile read against timeout to avoid slowing responses
       profile = (await Promise.race([pPromise, new Promise(res => setTimeout(() => res(null), PROFILE_READ_TIMEOUT_MS))])) as any
-      if (profile) {
+      if (profile && !lowIntentConversational) {
         // build a lightweight approximate cognitive state from profile + current message length
         approxState = estimateCognitiveState(profile, { repeatedConfusionCount: 0, recentFollowUps: 0, recentQuestionRatio: 0, avgMessageLength: (message || '').length, confusionDelta: 0, engagementDelta: 0, boredomSignal: 0, quickUnderstandingSignal: 0 })
         approxDecision = decideAdaptation(profile, approxState, { requestMode: 'default' })
@@ -261,9 +267,23 @@ class CognitaService {
 
     if (!aiResult.success) {
       const diag: any = aiResult.diagnostic || {}
-      const msg = `I couldn't generate a response due to a ${diag.primary?.classification || diag.classification || 'model'} issue. Suggested steps: ${((diag.primary && diag.primary.suggestedSteps) || diag.suggestedSteps || []).slice(0,5).join(' | ')}`
+      const primaryDiag = diag.primary || diag
+      const classification = primaryDiag?.classification || 'unknown'
+      const suggestedSteps = (primaryDiag?.suggestedSteps || diag.suggestedSteps || []).slice(0, 5)
+      const debugSummary = {
+        provider: primaryDiag?.provider || 'groq',
+        classification,
+        modelTried: primaryDiag?.modelTried || primaryDiag?.context?.resolvedModel || null,
+        requestedModel: primaryDiag?.context?.requestedModel || null,
+        availableModels: primaryDiag?.context?.availableModels || [],
+        envHasGroqKey: Boolean(primaryDiag?.context?.env?.hasGroqKey),
+        message: primaryDiag?.message || 'No provider response returned.'
+      }
+      console.error('[CognitaService] provider failure', JSON.stringify(debugSummary))
+
+      const msg = `Lumora could not generate a response because the AI provider failed. ${classification ? `Classification: ${classification}. ` : ''}${suggestedSteps.length ? `Next step: ${suggestedSteps[0]}` : 'Please try again in a moment.'}`
       const formatted = formatResponse(msg, mode)
-      return { mode, raw: aiResult.raw || null, text: '', formatted }
+      return { mode, raw: aiResult.raw || null, text: '', formatted, diagnostic: debugSummary }
     }
 
     // --- Lumora Core post-processing (light review) ---

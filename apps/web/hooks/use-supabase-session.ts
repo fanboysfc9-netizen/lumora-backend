@@ -1,0 +1,55 @@
+import { useEffect, useState } from 'react'
+import { Session } from '@supabase/supabase-js'
+import { getSupabaseBrowserClient, isSupabaseBrowserConfigured } from '../lib/supabase-browser'
+
+export function useSupabaseSession() {
+  const [session, setSession] = useState<Session | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const supabase = getSupabaseBrowserClient()
+    if (!supabase || !isSupabaseBrowserConfigured()) {
+      setError('Supabase authentication is not configured.')
+      setLoading(false)
+      return
+    }
+
+    let active = true
+    supabase.auth.getSession().then(({ data, error: sessionError }) => {
+      if (!active) return
+      if (sessionError) setError(sessionError.message)
+      setSession(data.session)
+      setLoading(false)
+    })
+
+    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!active) return
+      setSession(nextSession)
+      setLoading(false)
+    })
+
+    return () => {
+      active = false
+      data.subscription.unsubscribe()
+    }
+  }, [])
+
+  async function signIn(email: string, password: string) {
+    const supabase = getSupabaseBrowserClient()
+    if (!supabase) return { error: new Error('Supabase authentication is not configured.') }
+    const result = await supabase.auth.signInWithPassword({ email, password })
+    if (result.error) setError(result.error.message)
+    return result
+  }
+
+  async function signOut() {
+    const supabase = getSupabaseBrowserClient()
+    if (!supabase) return { error: new Error('Supabase authentication is not configured.') }
+    const result = await supabase.auth.signOut()
+    if (result.error) setError(result.error.message)
+    return result
+  }
+
+  return { session, loading, error, signIn, signOut }
+}

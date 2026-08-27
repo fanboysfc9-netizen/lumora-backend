@@ -5,6 +5,7 @@ type MessageRecord = { role: 'user' | 'assistant'; text: string; mode?: string; 
 class MemoryService {
   private db: any | null = null
   private inMemory: { conversations: Map<string, MessageRecord[]>; profiles: Map<string, any> }
+  private conversationOwners = new Map<string, string>()
 
   constructor() {
     try {
@@ -20,6 +21,7 @@ class MemoryService {
     if (!this.db) {
       const id = `mem_${Date.now()}`
       this.inMemory.conversations.set(id, [])
+      this.conversationOwners.set(id, userId)
       return id
     }
 
@@ -27,8 +29,17 @@ class MemoryService {
     return doc.id
   }
 
+  async conversationBelongsToUser(conversationId: string, userId: string): Promise<boolean> {
+    if (!conversationId || !userId) return false
+    if (!this.db) return this.conversationOwners.get(conversationId) === userId
+
+    const doc = await this.db.collection('conversations').doc(conversationId).get()
+    return doc.exists && doc.data()?.userId === userId
+  }
+
   async addUserMessage(userId: string, conversationId: string | undefined, text: string, mode?: string) {
     const convId = conversationId ?? (await this.createConversation(userId))
+    if (conversationId && !(await this.conversationBelongsToUser(convId, userId))) throw new Error('conversation ownership check failed')
 
     if (!this.db) {
       const arr = this.inMemory.conversations.get(convId) || []
@@ -43,6 +54,7 @@ class MemoryService {
 
   async addAIResponse(userId: string, conversationId: string | undefined, formatted: any, mode?: string) {
     const convId = conversationId ?? (await this.createConversation(userId))
+    if (conversationId && !(await this.conversationBelongsToUser(convId, userId))) throw new Error('conversation ownership check failed')
 
     const text = typeof formatted === 'string' ? formatted : JSON.stringify(formatted)
 
@@ -59,6 +71,7 @@ class MemoryService {
 
   async getConversationHistory(userId: string, conversationId?: string, limit = 50) {
     if (conversationId) {
+      if (!(await this.conversationBelongsToUser(conversationId, userId))) return []
       if (!this.db) {
         return this.inMemory.conversations.get(conversationId) || []
       }
