@@ -2,7 +2,7 @@ services:
   - type: web
     name: lumora-backend
     env: node
-    branch: main
+    branch: master
     root: apps/api
     plan: free
     buildCommand: "npm install --no-audit --no-fund && npm run build"
