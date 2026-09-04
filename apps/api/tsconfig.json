@@ -3,9 +3,8 @@
   "compilerOptions": {
     "rootDir": "../..",
     "outDir": "./dist",
-    "baseUrl": "../..",
     "paths": {
-      "core/*": ["core/*"]
+      "core/*": ["../../core/*"]
     },
     "noImplicitAny": false
   },
