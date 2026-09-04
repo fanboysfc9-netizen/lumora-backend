@@ -11,6 +11,7 @@
 import { Mode } from 'core/cognita/systemPrompt'
 import { LUMORA_SYSTEM_PROMPT } from '../prompts/lumora.system.prompt'
 import memoryService from 'core/memory/memory.service'
+import { modelForMode, resolveLumoraModel } from './model-resolver'
 
 type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string }
 
@@ -22,35 +23,8 @@ try {
   Groq = null
 }
 
-const SUPPORTED_GROQ_MODELS = [
-  'openai/gpt-oss-20b',
-  'openai/gpt-oss-120b',
-  'meta-llama/llama-4-scout-17b-16e-instruct',
-  'llama-3.3-70b-versatile',
-  'llama-3.1-70b-versatile',
-  'llama-3.1-8b-instant'
-] as const
-
-// Preferred model mapping (logical names -> preferred model id)
 export function getModel(mode: string): string {
-  switch (mode) {
-    case 'standard':
-      return 'openai/gpt-oss-20b'
-    case 'coding':
-      return 'meta-llama/llama-4-scout-17b-16e-instruct'
-    case 'creative':
-      return 'openai/gpt-oss-120b'
-    case 'fast':
-      return 'openai/gpt-oss-20b'
-    case 'research':
-      return 'meta-llama/llama-4-scout-17b-16e-instruct'
-    default:
-      return 'openai/gpt-oss-20b'
-  }
-}
-
-function getFallbackModelList(): string[] {
-  return [...SUPPORTED_GROQ_MODELS]
+  return resolveLumoraModel(modelForMode(mode)).model
 }
 
 type ErrorClassification = 'auth' | 'model' | 'quota' | 'network' | 'unknown'
@@ -114,20 +88,10 @@ class GroqService {
     }
   }
 
-  private resolveModel(preferred: string) {
-    const candidatePool = [...new Set([preferred, ...getFallbackModelList(), ...(this.availableModels || [])])]
-
-    for (const candidate of candidatePool) {
-      if (!candidate) continue
-      if (this.availableModels && this.availableModels.length > 0 && this.availableModels.includes(candidate)) {
-        return candidate
-      }
-      if (candidate === preferred) {
-        return preferred
-      }
-    }
-
-    return candidatePool[0] || preferred
+  private resolveModel(preferred: string, fallback: string) {
+    if (!this.availableModels || this.availableModels.length === 0) return preferred
+    if (this.availableModels.includes(preferred)) return preferred
+    return fallback
   }
 
   private classifyError(errMsg: string): ErrorClassification {
@@ -168,12 +132,13 @@ class GroqService {
   }
 
   // Low-level chat call with safe fallback (does not update conversational memory)
-  async createChatCompletion(messages: ChatMessage[], options?: { model?: string; mode?: string; cortexContext?: string }) {
+  async createChatCompletion(messages: ChatMessage[], options?: { lumoraModel?: string; mode?: string; cortexContext?: string }) {
     await this.ensureModelsLoaded()
 
     const mode = (options?.mode || 'standard') as string
-    const preferred = options?.model || getModel(mode)
-    const primary = this.resolveModel(preferred)
+    const requestedIdentity = options?.lumoraModel || modelForMode(mode)
+    const resolution = resolveLumoraModel(requestedIdentity)
+    const primary = this.resolveModel(resolution.model, resolution.fallbackModel)
 
     // Ensure the centralized Lumora system prompt is present as the first system message
     const hasLumoraSystem = Array.isArray(messages) && messages.some((m) => m.role === 'system' && typeof m.content === 'string' && m.content.includes('You are the core reasoning engine of Lumora.'))
@@ -217,7 +182,7 @@ class GroqService {
 
     const diagnosticContext = {
       provider: 'groq',
-      requestedModel: preferred,
+      requestedModel: resolution.identity,
       resolvedModel: primary,
       availableModels: this.availableModels.slice(0, 12),
       mode,
@@ -252,17 +217,7 @@ class GroqService {
       const tried: any[] = []
       const fallbacksTried: any[] = []
 
-      const orderedCandidates: string[] = []
-      const fallbackPreferred = 'llama-3.1-8b-instant'
-      if (this.availableModels && this.availableModels.length > 0) {
-        if (this.availableModels.includes(fallbackPreferred) && fallbackPreferred !== primary) orderedCandidates.push(fallbackPreferred)
-        for (const m of this.availableModels) {
-          if (m !== primary && !orderedCandidates.includes(m)) orderedCandidates.push(m)
-        }
-      } else {
-        // If we have no model list, still try the standard fallback
-        if (fallbackPreferred !== primary) orderedCandidates.push(fallbackPreferred)
-      }
+      const orderedCandidates = resolution.fallbackModel === primary ? [] : [resolution.fallbackModel]
 
       for (const cand of orderedCandidates) {
         try {

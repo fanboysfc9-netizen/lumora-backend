@@ -22,6 +22,9 @@ router.post('/', authenticateSupabaseRequest, async (req: Request, res: Response
       if (!m) return 'standard'
       const s = String(m).toLowerCase()
       if (s === 'standard' || s === 'coding' || s === 'creative' || s === 'research') return s
+      if (s === 'nira') return 'standard'
+      if (s === 'elara') return 'research'
+      if (s === 'solara') return 'creative'
       // Legacy mappings
       if (s === 'tutor') return 'standard'
       if (s === 'chat') return 'standard'
