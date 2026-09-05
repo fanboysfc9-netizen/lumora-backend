@@ -241,10 +241,8 @@ export default function Page() {
   useEffect(() => {
     async function load() {
       if (!session) {
-        try {
-          const stored = localStorage.getItem('lumora_anonymous_messages')
-          setMessages(stored ? JSON.parse(stored) : [])
-        } catch { setMessages([]) }
+        try { localStorage.removeItem('lumora_anonymous_messages') } catch {}
+        setMessages([])
         return
       }
       try {
@@ -319,12 +317,6 @@ export default function Page() {
       setStudyPlanLoading(false)
     })
   }, [session])
-
-  useEffect(() => {
-    if (!session) {
-      try { localStorage.setItem('lumora_anonymous_messages', JSON.stringify(messages.slice(-80))) } catch {}
-    }
-  }, [messages, session])
 
   useEffect(() => {
     const nextUserId = session?.user.id || null
@@ -998,13 +990,13 @@ export default function Page() {
           <input type="text" placeholder="Search conversations" readOnly />
         </div>
 
-        <div className="conversation-history">
+        {session && <div className="conversation-history">
           {messages.filter(m => m.role === 'user').slice(-5).map((msg, i) => (
             <button key={i} className="conversation-item" onClick={() => {}}>
               {msg.text.substring(0, 40)}...
             </button>
           ))}
-        </div>
+        </div>}
 
         <nav className="workspace-nav" aria-label="Workspace">
           <div className="nav-section-label">Workspace</div>
