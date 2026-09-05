@@ -69,7 +69,7 @@ class CognitaService {
     let approxDecision: any = null
     let approxPrediction: any = null
       let gstats: any = null
-    try {
+    if (userId) try {
       const PROFILE_READ_TIMEOUT_MS = 60
       const pPromise = getOrCreateProfile(userId!)
       // race profile read against timeout to avoid slowing responses
@@ -320,16 +320,6 @@ class CognitaService {
       }
     } catch (e) {
       console.error('[CognitaService] error during regeneration attempt', (e as any)?.message || String(e))
-    }
-
-    // Persist authenticated conversation messages only.
-    if (userId) {
-      try {
-        await memoryService.addUserMessage(userId, conversationId, message, String(mode))
-        await memoryService.addAIResponse(userId, conversationId, finalText, String(mode))
-      } catch (e) {
-        console.error('[CognitaService] failed to persist conversation (non-fatal):', (e as any)?.message || String(e))
-      }
     }
 
     const formatted = formatResponse(finalText || '', mode)

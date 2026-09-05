@@ -97,6 +97,38 @@ class MemoryService {
     return q.docs.map((d: any) => ({ role: d.data().role, text: d.data().text }))
   }
 
+  async deleteUserData(userId: string) {
+    if (!this.db) {
+      for (const [conversationId, ownerId] of this.conversationOwners.entries()) {
+        if (ownerId === userId) {
+          this.conversationOwners.delete(conversationId)
+          this.inMemory.conversations.delete(conversationId)
+        }
+      }
+      this.inMemory.profiles.delete(userId)
+      return
+    }
+
+    const snapshot = await this.db.collection('conversations').where('userId', '==', userId).get()
+    for (const conversation of snapshot.docs) {
+      const messages = await conversation.ref.collection('messages').get()
+      let batch = this.db.batch()
+      let writes = 0
+      for (const message of messages.docs) {
+        batch.delete(message.ref)
+        writes++
+        if (writes === 400) {
+          await batch.commit()
+          batch = this.db.batch()
+          writes = 0
+        }
+      }
+      batch.delete(conversation.ref)
+      await batch.commit()
+    }
+    await this.db.collection('profiles').doc(userId).delete()
+  }
+
   async updateUserProfile(userId: string, patch: any) {
     if (!this.db) {
       const existing = this.inMemory.profiles.get(userId) || {}

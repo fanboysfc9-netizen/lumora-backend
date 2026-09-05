@@ -16,6 +16,7 @@ export function run() {
   assert(migration.includes('study_plan_id uuid not null references public.study_plans(id) on delete cascade'), 'Topics must cascade from plans')
   assert(migration.includes('auth.uid() = user_id'), 'Project and plan policies must scope to auth.uid()')
   assert(migration.includes('where p.id = study_plan_id and p.user_id = auth.uid()'), 'Topic policy must inherit plan ownership')
+  assert(migration.includes('project_id uuid references public.projects(id) on delete cascade'), 'Plans must retain project ownership relationship')
   console.log('[PASS] project and study-plan ownership contract')
 }
 

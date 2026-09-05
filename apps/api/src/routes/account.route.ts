@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express'
 import authenticateSupabaseRequest from '../middleware/supabase-auth.middleware'
 import accountService from '../services/account.service'
 import entitlementService from '../services/entitlement.service'
+import memoryService from '../../../../core/memory/memory.service'
+import supabaseAdminService from '../services/supabase-admin.service'
 
 const router = Router()
 router.use(authenticateSupabaseRequest)
@@ -24,5 +26,17 @@ router.get('/', (req, res) => handle(res, async () => ({ account: await accountS
 router.get('/subscription', (req, res) => handle(res, async () => ({ subscription: await accountService.getCurrentSubscription(getAuth(req)) })))
 router.get('/entitlements', (req, res) => handle(res, async () => ({ entitlements: await entitlementService.getUserEntitlements(getAuth(req)) })))
 router.get('/usage', (req, res) => handle(res, async () => ({ usage: await accountService.getCurrentUsage(getAuth(req)) })))
+
+router.delete('/', async (req, res) => {
+  try {
+    const auth = getAuth(req)
+    await memoryService.deleteUserData(auth.userId)
+    await supabaseAdminService.deleteAuthUser(auth.userId)
+    return res.status(204).send()
+  } catch (error) {
+    console.error('[account] deletion failed:', error instanceof Error ? error.message : 'unknown error')
+    return res.status(500).json({ error: 'account deletion unavailable' })
+  }
+})
 
 export default router

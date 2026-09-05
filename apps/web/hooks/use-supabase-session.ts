@@ -47,7 +47,23 @@ export function useSupabaseSession() {
     const supabase = getSupabaseBrowserClient()
     if (!supabase) return { error: new Error('Supabase authentication is not configured.') }
     if (!termsAccepted) return { error: new Error('Accept the Terms & Conditions to create an account.') }
-    const result = await supabase.auth.signUp({ email, password })
+    const result = await supabase.auth.signUp({ email, password, options: { data: { terms_accepted: true } } })
+    if (result.error) setError(result.error.message)
+    return result
+  }
+
+  async function resetPassword(email: string) {
+    const supabase = getSupabaseBrowserClient()
+    if (!supabase) return { error: new Error('Supabase authentication is not configured.') }
+    const result = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/` })
+    if (result.error) setError(result.error.message)
+    return result
+  }
+
+  async function updatePassword(password: string) {
+    const supabase = getSupabaseBrowserClient()
+    if (!supabase) return { error: new Error('Supabase authentication is not configured.') }
+    const result = await supabase.auth.updateUser({ password })
     if (result.error) setError(result.error.message)
     return result
   }
@@ -60,5 +76,5 @@ export function useSupabaseSession() {
     return result
   }
 
-  return { session, loading, error, signIn, signUp, signOut }
+  return { session, loading, error, signIn, signUp, signOut, resetPassword, updatePassword }
 }

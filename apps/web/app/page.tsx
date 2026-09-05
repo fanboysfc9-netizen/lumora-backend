@@ -112,6 +112,7 @@ export default function Page() {
   const defaultStats = { totalMessages: 0, responses: 0, understood: 0, subjects: {} as Record<string, { messages: number; understood: number }> }
   const [stats, setStats] = useState(() => defaultStats)
   const [messages, setMessages] = useState<Msg[]>([])
+  const [conversationId, setConversationId] = useState<string | null>(null)
   const [input, setInput] = useState('')
   const [mode, setMode] = useState<string>('chat')
   const [activeMode, setActiveMode] = useState<string>(() => {
@@ -249,6 +250,7 @@ export default function Page() {
         const res = await authenticatedFetch(`${API_URL!}/history`, session)
         const data = await res.json()
         if (data?.ok && Array.isArray(data.history)) {
+          setConversationId(data.conversationId || null)
           setMessages(data.history.map((m: any) => ({ role: m.role, text: m.text })))
         }
       } catch (err) {
@@ -322,6 +324,7 @@ export default function Page() {
     const nextUserId = session?.user.id || null
     if (previousUserIdRef.current !== null && previousUserIdRef.current !== nextUserId) {
       setMessages([])
+      setConversationId(null)
       setInput('')
       setStats(defaultStats)
     }
@@ -710,7 +713,7 @@ export default function Page() {
       const res = session
         ? await authenticatedFetch(API_URL!, session, {
         method: 'POST',
-        body: JSON.stringify({ message: text, mode: activeMode, subject: requestSubject, skill: computeSkillForSubject(requestSubject), projectContext: projectContextPayload })
+        body: JSON.stringify({ message: text, conversationId, mode: activeMode, subject: requestSubject, skill: computeSkillForSubject(requestSubject), projectContext: projectContextPayload })
       })
         : await fetch(API_URL!, {
           method: 'POST',
@@ -721,6 +724,7 @@ export default function Page() {
       try { markTiming('responseReceived') } catch (e) {}
       try { sendVoiceMetrics({ textLength: text.length, subject, mode: activeMode }) } catch (e) {}
       if (data?.ok) {
+        if (session && data.conversationId) setConversationId(data.conversationId)
         const assistantText = data.text || (data.formatted && JSON.stringify(data.formatted)) || ''
         const assistantMsg: Msg = { role: 'assistant', text: assistantText, id: `a-${Date.now()}`, subject, mode: activeMode }
         setMessages((m) => [...m, assistantMsg])
@@ -983,7 +987,7 @@ export default function Page() {
           <span className="brand-mark" aria-hidden="true">L</span>
           <span>Lumora Cognita</span>
         </div>
-        <button className="new-chat-btn" onClick={() => { setMessages([]); setMobileNavOpen(false) }}><Icon name="plus" /> New Chat</button>
+        <button className="new-chat-btn" onClick={() => { setMessages([]); setConversationId(null); setMobileNavOpen(false) }}><Icon name="plus" /> New Chat</button>
 
         <div className="sidebar-search">
           <Icon name="menu" />
