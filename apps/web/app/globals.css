@@ -86,6 +86,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .chat-input:focus-within { border-color: #776742; }
 .chat-input-field { min-height: 48px; max-height: 170px; flex: 1; resize: none; padding: 12px 5px; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 15px; line-height: 1.45; }
 .chat-input-field::placeholder { color: var(--faint); }
+.light-theme .chat-input-field { color: #17171b; caret-color: #17171b; }
+.light-theme .chat-input-field::selection { background: #d9d7e2; color: #17171b; }
+.chat-input-field { caret-color: var(--text); }
+.chat-input-field::selection { background: var(--accent-soft); color: var(--text); }
 .send-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 10px 15px; border: 1px solid #d9d8df; border-radius: 8px; background: #eeedf1; color: #6f6e76; font-weight: 650; }
 .send-btn:hover { background: #e2e1e7; color: var(--text); }
 .send-btn:disabled { border-color: var(--border); background: var(--border); color: var(--faint); cursor: not-allowed; }

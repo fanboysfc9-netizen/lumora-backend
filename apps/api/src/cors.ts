@@ -16,6 +16,7 @@ export function getAllowedOrigins(): string[] {
   ]
 
   const defaults = [
+    'https://lumoracognita.vercel.app',
     `https://${firebaseProject}.web.app`,
     `https://${firebaseProject}.firebaseapp.com`,
     'http://localhost:3000',
