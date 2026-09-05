@@ -46,4 +46,32 @@ router.get('/history', authenticateSupabaseRequest, async (req: Request, res: Re
   }
 })
 
+router.get('/conversations', authenticateSupabaseRequest, async (req: Request, res: Response) => {
+  try {
+    return res.json({ ok: true, conversations: await supabaseChatService.listConversations(req.auth!, String(req.query.search || '')) })
+  } catch (err: any) {
+    console.error('conversation list error', err)
+    return res.status(500).json({ error: 'conversations unavailable' })
+  }
+})
+
+router.patch('/conversations/:conversationId', authenticateSupabaseRequest, async (req: Request, res: Response) => {
+  try {
+    const conversation = await supabaseChatService.renameConversation(req.auth!, req.params.conversationId, String(req.body?.title || ''))
+    return res.json({ ok: true, conversation })
+  } catch (err: any) {
+    const status = err?.message === 'conversation not found' ? 404 : 400
+    return res.status(status).json({ error: err?.message || 'conversation update failed' })
+  }
+})
+
+router.delete('/conversations/:conversationId', authenticateSupabaseRequest, async (req: Request, res: Response) => {
+  try {
+    await supabaseChatService.deleteConversation(req.auth!, req.params.conversationId)
+    return res.status(204).send()
+  } catch (err: any) {
+    return res.status(err?.message === 'conversation not found' ? 404 : 500).json({ error: err?.message || 'conversation deletion failed' })
+  }
+})
+
 export default router

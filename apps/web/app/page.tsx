@@ -11,6 +11,7 @@ type Project = { id: string; title: string; description: string; subject: string
 type PlanTopic = { id?: string; week_number: number; title: string; lesson?: string; exercise?: string; completed: boolean; sort_order?: number }
 type StudyPlan = { id: string; title: string; objective: string; subject: string; learner_level: string; estimated_duration: string; schedule: string; project_id?: string | null; study_plan_topics?: PlanTopic[] }
 type ProjectContext = { projectId: string; projectName: string; subject?: string; studyPlanId?: string | null }
+type Conversation = { id: string; title: string; created_at: string; updated_at: string }
 
 type TutorName = 'Nira' | 'Elara' | 'Solara'
 
@@ -62,7 +63,7 @@ if (!API_URL) {
 
 const FRANCES_NAME = 'Frances'
 const FRANCES_DESCRIPTION = "A special girl's name you're mentioning"
-const IDENTITY_PHRASE = 'I was created by Nana Yaw Boakye Yiadom, also known as Bastoni.'
+const IDENTITY_PHRASE = 'Lumora Cognita was created by Lumora Technologies.'
 
 function normalizeQuestion(s: string) {
   return s
@@ -116,6 +117,8 @@ export default function Page() {
   const [stats, setStats] = useState(() => defaultStats)
   const [messages, setMessages] = useState<Msg[]>([])
   const [conversationId, setConversationId] = useState<string | null>(null)
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [conversationSearch, setConversationSearch] = useState('')
   const [input, setInput] = useState('')
   const [mode, setMode] = useState<string>('chat')
   const [activeMode, setActiveMode] = useState<string>(() => {
@@ -271,6 +274,24 @@ export default function Page() {
     }
     load()
   }, [search, session])
+
+  useEffect(() => {
+    async function loadConversations() {
+      if (!session) {
+        setConversations([])
+        return
+      }
+      try {
+        const query = conversationSearch.trim() ? `?search=${encodeURIComponent(conversationSearch.trim())}` : ''
+        const res = await authenticatedFetch(`${API_URL!}/conversations${query}`, session)
+        const data = await res.json()
+        if (data?.ok && Array.isArray(data.conversations)) setConversations(data.conversations)
+      } catch (err) {
+        console.warn('failed to load conversations', err)
+      }
+    }
+    loadConversations()
+  }, [conversationSearch, session?.user.id, session?.access_token])
 
   useEffect(() => {
     if (!session) {
@@ -727,7 +748,12 @@ export default function Page() {
       try { markTiming('responseReceived') } catch (e) {}
       try { sendVoiceMetrics({ textLength: text.length, subject, mode: activeMode }) } catch (e) {}
       if (data?.ok) {
-        if (session && data.conversationId) setConversationId(data.conversationId)
+        if (session && data.conversationId) {
+          setConversationId(data.conversationId)
+          const conversationsResponse = await authenticatedFetch(`${API_URL!}/conversations`, session)
+          const conversationsData = await conversationsResponse.json()
+          if (conversationsData?.ok && Array.isArray(conversationsData.conversations)) setConversations(conversationsData.conversations)
+        }
         const assistantText = data.text || (data.formatted && JSON.stringify(data.formatted)) || ''
         const assistantMsg: Msg = { role: 'assistant', text: assistantText, id: `a-${Date.now()}`, subject, mode: activeMode }
         setMessages((m) => [...m, assistantMsg])
@@ -826,6 +852,56 @@ export default function Page() {
       setActiveProjectContext(null)
     }
     setMobileNavOpen(false)
+  }
+
+  function formatConversationDate(value: string) {
+    const date = new Date(value)
+    const now = new Date()
+    return date.toDateString() === now.toDateString() ? date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : date.toLocaleDateString([], { month: 'short', day: 'numeric' })
+  }
+
+  async function openConversation(conversation: Conversation) {
+    if (!session) return
+    try {
+      const res = await authenticatedFetch(`${API_URL!}/history?conversationId=${encodeURIComponent(conversation.id)}`, session)
+      const data = await res.json()
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Conversation unavailable')
+      setWorkspaceView('chat')
+      setConversationId(conversation.id)
+      setMessages(Array.isArray(data.history) ? data.history.map((message: any) => ({ role: message.role, text: message.text })) : [])
+      setMobileNavOpen(false)
+    } catch (error) {
+      setWorkspaceError(error instanceof Error ? error.message : 'Conversation unavailable')
+    }
+  }
+
+  async function renameConversation(conversation: Conversation) {
+    if (!session) return
+    const title = window.prompt('Rename conversation', conversation.title)
+    if (title === null) return
+    try {
+      const res = await authenticatedFetch(`${API_URL!}/conversations/${conversation.id}`, session, { method: 'PATCH', body: JSON.stringify({ title }) })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error || 'Conversation could not be renamed')
+      setConversations((items) => items.map((item) => item.id === conversation.id ? data.conversation : item))
+    } catch (error) {
+      setWorkspaceError(error instanceof Error ? error.message : 'Conversation could not be renamed')
+    }
+  }
+
+  async function deleteConversation(conversation: Conversation) {
+    if (!session || !window.confirm(`Delete "${conversation.title}"?`)) return
+    try {
+      const res = await authenticatedFetch(`${API_URL!}/conversations/${conversation.id}`, session, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Conversation could not be deleted')
+      setConversations((items) => items.filter((item) => item.id !== conversation.id))
+      if (conversationId === conversation.id) {
+        setConversationId(null)
+        setMessages([])
+      }
+    } catch (error) {
+      setWorkspaceError(error instanceof Error ? error.message : 'Conversation could not be deleted')
+    }
   }
 
   function openProject(project: Project) {
@@ -1013,14 +1089,20 @@ export default function Page() {
 
         <div className="sidebar-search">
           <Icon name="menu" />
-          <input type="text" placeholder="Search conversations" readOnly />
+          <input type="text" placeholder="Search conversations" value={conversationSearch} onChange={(event) => setConversationSearch(event.target.value)} />
         </div>
 
         {session && <div className="conversation-history">
-          {messages.filter(m => m.role === 'user').slice(-5).map((msg, i) => (
-            <button key={i} className="conversation-item" onClick={() => {}}>
-              {msg.text.substring(0, 40)}...
-            </button>
+          {conversations.map((conversation) => (
+            <div key={conversation.id} className="conversation-history-item">
+              <button className="conversation-item" onClick={() => openConversation(conversation)}>
+                <strong>{conversation.title}</strong><small>{formatConversationDate(conversation.updated_at)}</small>
+              </button>
+              <div className="conversation-actions">
+                <button type="button" onClick={() => renameConversation(conversation)} aria-label={`Rename ${conversation.title}`}>Rename</button>
+                <button type="button" onClick={() => deleteConversation(conversation)} aria-label={`Delete ${conversation.title}`}>Delete</button>
+              </div>
+            </div>
           ))}
         </div>}
 
@@ -1050,14 +1132,20 @@ export default function Page() {
         <div className="sidebar-spacer" />
         <div className="sidebar-user">
           {session ? (
-            <>
+          <input type="text" placeholder="Search conversations" value={conversationSearch} onChange={(event) => setConversationSearch(event.target.value)} />
               <div className="user-avatar">{session.user.email?.[0]?.toUpperCase() || 'U'}</div>
               <span>{authenticatedDisplayName}</span>
             </>
-          ) : (
-            <>
-              <div className="user-avatar">G</div>
-              <span>Guest</span>
+          {conversations.map((conversation) => (
+            <div key={conversation.id} className="conversation-history-item">
+              <button className="conversation-item" onClick={() => openConversation(conversation)}>
+                <strong>{conversation.title}</strong><small>{formatConversationDate(conversation.updated_at)}</small>
+              </button>
+              <div className="conversation-actions">
+                <button type="button" onClick={() => renameConversation(conversation)} aria-label={`Rename ${conversation.title}`}>Rename</button>
+                <button type="button" onClick={() => deleteConversation(conversation)} aria-label={`Delete ${conversation.title}`}>Delete</button>
+              </div>
+            </div>
             </>
           )}
         </div>

@@ -39,6 +39,14 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .sidebar-search input::placeholder { color: #77756e; }
 .conversation-history { display: grid; gap: 2px; max-height: 150px; margin-bottom: 18px; overflow-y: auto; }
 .conversation-item { padding: 7px 10px; overflow: hidden; background: transparent; color: #aaa79f; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-history-item { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.conversation-history-item .conversation-item { display: grid; flex: 1; gap: 2px; min-width: 0; }
+.conversation-item strong { overflow: hidden; color: inherit; font-size: 12px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-item small { color: #77756e; font-size: 10px; }
+.conversation-actions { display: flex; gap: 2px; opacity: 0; transition: opacity .18s ease; }
+.conversation-history-item:hover .conversation-actions, .conversation-history-item:focus-within .conversation-actions { opacity: 1; }
+.conversation-actions button { border: 0; background: transparent; color: #77756e; font-size: 10px; padding: 4px; }
+.conversation-actions button:hover { color: #f5f2eb; }
 .workspace-nav { display: grid; gap: 2px; }
 .nav-section-label { margin: 17px 10px 6px; color: #77756e; font-size: 10px; font-weight: 650; letter-spacing: .14em; text-transform: uppercase; }
 .nav-item { display: flex; align-items: center; gap: 11px; width: 100%; min-height: 40px; padding: 9px 10px; background: transparent; color: #aaa79f; font-size: 13px; transition: background .18s ease, color .18s ease; }
