@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import cognitaService from '../services/cognita.service'
 import authenticateSupabaseRequest, { createOptionalSupabaseAuthMiddleware } from '../middleware/supabase-auth.middleware'
 import supabaseChatService from '../services/supabase-chat.service'
+import { mapClientMode } from '../services/chat-mode'
 
 const router = Router()
 
@@ -11,22 +12,6 @@ router.post('/', createOptionalSupabaseAuthMiddleware(), async (req: Request, re
     const userId = req.auth?.userId
     if (!message) return res.status(400).json({ error: 'message is required' })
     const bodyMode = req.body?.mode as string | undefined
-
-    // Map frontend mode names to internal Mode values
-    const mapClientMode = (m?: string) => {
-      if (!m) return 'standard'
-      const s = String(m).toLowerCase()
-      if (s === 'standard' || s === 'coding' || s === 'creative' || s === 'research') return s
-      if (s === 'nira') return 'standard'
-      if (s === 'elara') return 'research'
-      if (s === 'solara') return 'creative'
-      // Legacy mappings
-      if (s === 'tutor') return 'standard'
-      if (s === 'chat') return 'standard'
-      if (s === 'coach') return 'standard'
-      return 'standard'
-    }
-
     const mappedMode = mapClientMode(bodyMode)
 
     const result = await cognitaService.handleMessage({ userId, message, conversationId, mode: mappedMode })
@@ -46,6 +31,7 @@ router.post('/', createOptionalSupabaseAuthMiddleware(), async (req: Request, re
     return res.status(500).json({ error: err?.message || 'internal error' })
   }
 })
+
 
 router.get('/history', authenticateSupabaseRequest, async (req: Request, res: Response) => {
   try {

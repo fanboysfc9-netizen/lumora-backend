@@ -1034,8 +1034,8 @@ export default function Page() {
             </>
           ) : (
             <>
-              <div className="user-avatar">Y</div>
-              <span>Yaw</span>
+              <div className="user-avatar">G</div>
+              <span>Guest</span>
             </>
           )}
         </div>
