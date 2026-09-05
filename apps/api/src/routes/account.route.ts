@@ -23,6 +23,7 @@ async function handle(res: Response, work: () => Promise<unknown>) {
 }
 
 router.get('/', (req, res) => handle(res, async () => ({ account: await accountService.getCurrentAccount(getAuth(req)) })))
+router.patch('/profile', (req, res) => handle(res, async () => ({ profile: await accountService.updateCurrentProfile(getAuth(req), req.body || {}) })))
 router.get('/subscription', (req, res) => handle(res, async () => ({ subscription: await accountService.getCurrentSubscription(getAuth(req)) })))
 router.get('/entitlements', (req, res) => handle(res, async () => ({ entitlements: await entitlementService.getUserEntitlements(getAuth(req)) })))
 router.get('/usage', (req, res) => handle(res, async () => ({ usage: await accountService.getCurrentUsage(getAuth(req)) })))

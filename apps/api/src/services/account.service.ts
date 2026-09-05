@@ -20,7 +20,20 @@ async function readSingle(client: SupabaseClient, table: string, userId: string,
 }
 
 export async function getCurrentProfile(auth: VerifiedAuth) {
-  const { data, error } = await getClient(auth).from('profiles').select('id,created_at,updated_at').eq('id', auth.userId).maybeSingle()
+  const { data, error } = await getClient(auth).from('profiles').select('id,display_name,created_at,updated_at,terms_accepted_at').eq('id', auth.userId).maybeSingle()
+  if (error) throw error
+  return data
+}
+
+export async function updateCurrentProfile(auth: VerifiedAuth, input: { displayName?: string }) {
+  const displayName = input.displayName === undefined ? undefined : String(input.displayName).trim().slice(0, 80)
+  if (displayName === undefined) throw new Error('no profile changes supplied')
+  const { data, error } = await getClient(auth)
+    .from('profiles')
+    .update({ display_name: displayName || null, updated_at: new Date().toISOString() })
+    .eq('id', auth.userId)
+    .select('id,display_name,created_at,updated_at,terms_accepted_at')
+    .single()
   if (error) throw error
   return data
 }
@@ -64,4 +77,4 @@ export async function getCurrentAccount(auth: VerifiedAuth) {
   return { profile, subscription, plan, entitlements, usage }
 }
 
-export default { getCurrentProfile, getCurrentSubscription, getCurrentPlan, getCurrentEntitlements, getCurrentUsage, getCurrentAccount }
+export default { getCurrentProfile, updateCurrentProfile, getCurrentSubscription, getCurrentPlan, getCurrentEntitlements, getCurrentUsage, getCurrentAccount }

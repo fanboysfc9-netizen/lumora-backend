@@ -3,7 +3,7 @@ import { Session } from '@supabase/supabase-js'
 import { ApiAuthenticationError, authenticatedFetch } from '../utils/api-client'
 
 export type AccountState = {
-  profile: { id: string; created_at: string; updated_at: string } | null
+  profile: { id: string; display_name?: string | null; created_at: string; updated_at: string; terms_accepted_at?: string | null } | null
   subscription: Record<string, unknown> | null
   plan: Record<string, unknown> | null
   entitlements: Array<{ feature_key: string; feature_value: unknown }>
@@ -48,5 +48,14 @@ export function useAccountState(session: Pick<Session, 'access_token'> & { user:
     return () => { active = false }
   }, [session?.user.id, session?.access_token, apiUrl])
 
-  return { account, loading, error }
+  async function updateProfile(displayName: string) {
+    if (!session) return { error: new Error('authentication required') }
+    const response = await authenticatedFetch(`${accountUrl(apiUrl)}/profile`, session, { method: 'PATCH', body: JSON.stringify({ displayName }) })
+    const payload = await response.json()
+    if (!response.ok) return { error: new Error(payload?.error || 'profile update failed') }
+    setAccount((current) => current ? { ...current, profile: payload.profile } : current)
+    return { profile: payload.profile }
+  }
+
+  return { account, loading, error, updateProfile }
 }

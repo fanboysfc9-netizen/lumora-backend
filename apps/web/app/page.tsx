@@ -74,13 +74,16 @@ function normalizeQuestion(s: string) {
 
 export default function Page() {
   const { session, loading: authLoading, error: authError, signIn, signUp, signOut } = useSupabaseSession()
-  useAccountState(session, API_URL!)
+  const { account, updateProfile } = useAccountState(session, API_URL!)
   const [authEmail, setAuthEmail] = useState('')
   const [authPassword, setAuthPassword] = useState('')
   const [authFormError, setAuthFormError] = useState<string | null>(null)
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin')
   const [termsAccepted, setTermsAccepted] = useState(false)
+  const [profileName, setProfileName] = useState('')
+  const [profileSaving, setProfileSaving] = useState(false)
+  const [profileMessage, setProfileMessage] = useState<string | null>(null)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const previousUserIdRef = useRef<string | null>(null)
   const [theme, setTheme] = useState<string>(() => {
@@ -778,6 +781,25 @@ export default function Page() {
   const overallProgress = stats.responses ? Math.round(((stats.understood || 0) / stats.responses) * 100) : 0
   const firstName = session?.user.email?.split('@')[0]?.split(/[._-]/)[0]
   const displayName = firstName ? firstName.charAt(0).toUpperCase() + firstName.slice(1) : null
+    const authenticatedDisplayName = account?.profile?.display_name || displayName || 'Account'
+
+    useEffect(() => {
+      if (!session) {
+        setProfileName('')
+        setProfileMessage(null)
+        return
+      }
+      setProfileName(account?.profile?.display_name || '')
+    }, [account?.profile?.display_name, session?.user.id])
+
+    async function saveProfile(event: React.FormEvent) {
+      event.preventDefault()
+      setProfileSaving(true)
+      setProfileMessage(null)
+      const result = await updateProfile(profileName)
+      setProfileSaving(false)
+      setProfileMessage(result.error ? result.error.message : 'Profile updated')
+    }
   const activeTutor = tutorForMode(activeMode)
   const greetings = displayName
     ? [`What's up, ${displayName}?`, `Good to see you, ${displayName}.`, `What are we learning today, ${displayName}?`, `Ready to keep learning, ${displayName}?`]
@@ -1030,7 +1052,7 @@ export default function Page() {
           {session ? (
             <>
               <div className="user-avatar">{session.user.email?.[0]?.toUpperCase() || 'U'}</div>
-              <span>{session.user.email?.split('@')[0] || 'User'}</span>
+              <span>{authenticatedDisplayName}</span>
             </>
           ) : (
             <>
@@ -1156,6 +1178,13 @@ export default function Page() {
           </div>
           {showStats && (
             <aside className="stats-panel" role="region" aria-label="Learning statistics">
+              {session && <form className="workspace-form" onSubmit={saveProfile}>
+                <h4>Account</h4>
+                <label className="small" htmlFor="display-name">Display name</label>
+                <input id="display-name" value={profileName} onChange={(event) => setProfileName(event.target.value)} placeholder="Your display name" maxLength={80} />
+                <button className="send-btn" type="submit" disabled={profileSaving}>{profileSaving ? 'Saving...' : 'Save profile'}</button>
+                {profileMessage && <div className="muted" role="status">{profileMessage}</div>}
+              </form>}
               <h4>Learning Dashboard</h4>
               <div className="stat-row"><div>Total messages</div><div>{stats.totalMessages}</div></div>
               <div className="stat-row"><div>Responses</div><div>{stats.responses}</div></div>
