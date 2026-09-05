@@ -1132,20 +1132,14 @@ export default function Page() {
         <div className="sidebar-spacer" />
         <div className="sidebar-user">
           {session ? (
-          <input type="text" placeholder="Search conversations" value={conversationSearch} onChange={(event) => setConversationSearch(event.target.value)} />
+            <>
               <div className="user-avatar">{session.user.email?.[0]?.toUpperCase() || 'U'}</div>
               <span>{authenticatedDisplayName}</span>
             </>
-          {conversations.map((conversation) => (
-            <div key={conversation.id} className="conversation-history-item">
-              <button className="conversation-item" onClick={() => openConversation(conversation)}>
-                <strong>{conversation.title}</strong><small>{formatConversationDate(conversation.updated_at)}</small>
-              </button>
-              <div className="conversation-actions">
-                <button type="button" onClick={() => renameConversation(conversation)} aria-label={`Rename ${conversation.title}`}>Rename</button>
-                <button type="button" onClick={() => deleteConversation(conversation)} aria-label={`Delete ${conversation.title}`}>Delete</button>
-              </div>
-            </div>
+          ) : (
+            <>
+              <div className="user-avatar">G</div>
+              <span>Guest</span>
             </>
           )}
         </div>
