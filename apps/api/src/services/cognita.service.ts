@@ -31,7 +31,7 @@ class CognitaService {
 
   // AI logic centralized in groq.service (askGroq handles prompts & memory)
 
-  async handleMessage(options: { userId: string; message: string; conversationId?: string; mode?: string }) {
+  async handleMessage(options: { userId?: string; message: string; conversationId?: string; mode?: string }) {
     const { userId, message, conversationId, mode: providedMode } = options
 
     // Map frontend mode to internal Mode
@@ -71,7 +71,7 @@ class CognitaService {
       let gstats: any = null
     try {
       const PROFILE_READ_TIMEOUT_MS = 60
-      const pPromise = getOrCreateProfile(userId)
+      const pPromise = getOrCreateProfile(userId!)
       // race profile read against timeout to avoid slowing responses
       profile = (await Promise.race([pPromise, new Promise(res => setTimeout(() => res(null), PROFILE_READ_TIMEOUT_MS))])) as any
       if (profile && !lowIntentConversational) {
@@ -82,7 +82,7 @@ class CognitaService {
         // Attempt to analyze recent conversation for a more informed decision (non-blocking)
         try {
           const CONV_READ_TIMEOUT_MS = 120
-          const convPromise = analyzeConversation(userId, conversationId, 8)
+          const convPromise = analyzeConversation(userId!, conversationId, 8)
           const convBehavior: any = await Promise.race([convPromise, new Promise(res => setTimeout(() => res(null), CONV_READ_TIMEOUT_MS))])
           if (convBehavior) {
             const convState = estimateCognitiveState(profile, convBehavior)
@@ -322,36 +322,36 @@ class CognitaService {
       console.error('[CognitaService] error during regeneration attempt', (e as any)?.message || String(e))
     }
 
-    // Persist conversation messages (best-effort)
-    try {
+    // Persist authenticated conversation messages only.
+    if (userId) {
       try {
         await memoryService.addUserMessage(userId, conversationId, message, String(mode))
         await memoryService.addAIResponse(userId, conversationId, finalText, String(mode))
       } catch (e) {
         console.error('[CognitaService] failed to persist conversation (non-fatal):', (e as any)?.message || String(e))
       }
-    } catch (e) {
-      // swallow memory errors
     }
 
     const formatted = formatResponse(finalText || '', mode)
 
     // Fire-and-forget: run the Cortex feedback loop asynchronously so it never blocks the response
-    ;(async () => {
-      try {
-        await processInteractionOutcome(userId, conversationId, {
-          userMessage: message,
-          aiResponse: finalText,
-          prevState: approxState,
-          prevDecision: approxDecision,
-          modeUsed: mode,
-          timestamp: Date.now()
-        })
-        console.log('[Cortex] feedback loop processed (async)')
-      } catch (e) {
-        console.error('[Cortex] feedback loop error (non-fatal):', (e as any)?.message || String(e))
-      }
-    })()
+    if (userId) {
+      ;(async () => {
+        try {
+          await processInteractionOutcome(userId, conversationId, {
+            userMessage: message,
+            aiResponse: finalText,
+            prevState: approxState,
+            prevDecision: approxDecision,
+            modeUsed: mode,
+            timestamp: Date.now()
+          })
+          console.log('[Cortex] feedback loop processed (async)')
+        } catch (e) {
+          console.error('[Cortex] feedback loop error (non-fatal):', (e as any)?.message || String(e))
+        }
+      })()
+    }
 
     return { mode, raw: aiResult.raw, text: finalText, formatted }
   }

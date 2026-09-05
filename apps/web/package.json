@@ -6,7 +6,7 @@
     "dev": "next dev -p 3000",
     "prebuild": "node ./scripts/verify_env.js",
     "test:auth": "..\\api\\node_modules\\.bin\\ts-node.cmd --project tsconfig.test.json utils/auth-client.test.ts",
-    "build": "next build && next export",
+    "build": "next build",
     "start": "next start -p 3000"
   },
   "dependencies": {

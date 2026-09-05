@@ -43,6 +43,15 @@ export function useSupabaseSession() {
     return result
   }
 
+  async function signUp(email: string, password: string, termsAccepted: boolean) {
+    const supabase = getSupabaseBrowserClient()
+    if (!supabase) return { error: new Error('Supabase authentication is not configured.') }
+    if (!termsAccepted) return { error: new Error('Accept the Terms & Conditions to create an account.') }
+    const result = await supabase.auth.signUp({ email, password })
+    if (result.error) setError(result.error.message)
+    return result
+  }
+
   async function signOut() {
     const supabase = getSupabaseBrowserClient()
     if (!supabase) return { error: new Error('Supabase authentication is not configured.') }
@@ -51,5 +60,5 @@ export function useSupabaseSession() {
     return result
   }
 
-  return { session, loading, error, signIn, signOut }
+  return { session, loading, error, signIn, signUp, signOut }
 }

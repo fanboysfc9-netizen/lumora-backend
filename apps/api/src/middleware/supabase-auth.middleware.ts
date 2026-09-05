@@ -47,6 +47,13 @@ export function createSupabaseAuthMiddleware(client?: Pick<SupabaseClient, 'auth
   return (req: Request, res: Response, next: NextFunction) => authenticateWithClient(req, res, next, client)
 }
 
+export function createOptionalSupabaseAuthMiddleware(client?: Pick<SupabaseClient, 'auth'>) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    if (!getBearerToken(req)) return next()
+    return authenticateWithClient(req, res, next, client)
+  }
+}
+
 export async function authenticateSupabaseRequest(req: Request, res: Response, next: NextFunction) {
   return authenticateWithClient(req, res, next)
 }

@@ -1,17 +1,16 @@
 import { Router, Request, Response } from 'express'
 import cognitaService from '../services/cognita.service'
 import memoryService from '../../../../core/memory/memory.service'
-import authenticateSupabaseRequest from '../middleware/supabase-auth.middleware'
+import authenticateSupabaseRequest, { createOptionalSupabaseAuthMiddleware } from '../middleware/supabase-auth.middleware'
 
 const router = Router()
 
-router.post('/', authenticateSupabaseRequest, async (req: Request, res: Response) => {
+router.post('/', createOptionalSupabaseAuthMiddleware(), async (req: Request, res: Response) => {
   try {
     const { message, conversationId } = req.body
     const userId = req.auth?.userId
-    if (!userId) return res.status(401).json({ error: 'authentication required' })
     if (!message) return res.status(400).json({ error: 'message is required' })
-    if (conversationId && !(await memoryService.conversationBelongsToUser(String(conversationId), userId))) {
+    if (userId && conversationId && !(await memoryService.conversationBelongsToUser(String(conversationId), userId))) {
       return res.status(404).json({ error: 'conversation not found' })
     }
 

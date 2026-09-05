@@ -1,4 +1,4 @@
-import { createSupabaseAuthMiddleware } from '../middleware/supabase-auth.middleware'
+import { createOptionalSupabaseAuthMiddleware, createSupabaseAuthMiddleware } from '../middleware/supabase-auth.middleware'
 import memoryService from '../../../../core/memory/memory.service'
 
 function assert(condition: unknown, message: string) {
@@ -35,6 +35,13 @@ async function authenticate(req: any, client: any) {
   return { res, continued }
 }
 
+async function optionallyAuthenticate(req: any, client: any) {
+  const res = response()
+  let continued = false
+  await createOptionalSupabaseAuthMiddleware(client)(req, res as any, () => { continued = true })
+  return { res, continued }
+}
+
 export async function run() {
   console.log('[TEST] auth boundary')
 
@@ -52,6 +59,13 @@ export async function run() {
   equal(valid.continued, true, 'Valid authentication must continue to the route')
   equal(validRequest.auth.userId, 'user-a', 'Identity must come from the verified token')
   assert(validRequest.auth.userId !== validRequest.body.userId, 'Client userId must not override verified identity')
+
+  const anonymous = await optionallyAuthenticate(request(), { auth: { getUser: async () => ({ data: {}, error: null }) } })
+  equal(anonymous.res.statusCode, 200, 'Anonymous chat requests must pass the optional auth boundary')
+  equal(anonymous.continued, true, 'Anonymous chat requests must continue without a token')
+
+  const optionalInvalid = await optionallyAuthenticate(request('Bearer expired-token'), { auth: { getUser: async () => ({ data: { user: null }, error: new Error('expired') }) } })
+  equal(optionalInvalid.res.statusCode, 401, 'Provided invalid tokens must still be rejected')
 
   ;(memoryService as any).db = null
   const userAConversation = await memoryService.createConversation('user-a')
