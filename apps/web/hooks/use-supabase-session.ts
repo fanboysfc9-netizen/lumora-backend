@@ -76,5 +76,14 @@ export function useSupabaseSession() {
     return result
   }
 
-  return { session, loading, error, signIn, signUp, signOut, resetPassword, updatePassword }
+  async function refreshSession() {
+    const supabase = getSupabaseBrowserClient()
+    if (!supabase) return null
+    const result = await supabase.auth.getSession()
+    if (result.error) setError(result.error.message)
+    if (result.data.session) setSession(result.data.session)
+    return result.data.session
+  }
+
+  return { session, loading, error, signIn, signUp, signOut, resetPassword, updatePassword, refreshSession }
 }

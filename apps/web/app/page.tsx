@@ -34,7 +34,7 @@ function modeForTutor(name: TutorName) {
   return TUTORS.find((tutor) => tutor.name === name)?.mode || 'nira'
 }
 
-function Icon({ name }: { name: 'menu' | 'sun' | 'moon' | 'mic' | 'stop' | 'plus' | 'home' | 'chat' | 'folder' | 'book' | 'spark' | 'settings' | 'user' | 'logout' | 'search' | 'paperclip' | 'arrow-up' }) {
+function Icon({ name }: { name: 'menu' | 'sun' | 'moon' | 'mic' | 'stop' | 'plus' | 'home' | 'chat' | 'folder' | 'book' | 'spark' | 'settings' | 'user' | 'logout' | 'search' | 'paperclip' | 'arrow-up' | 'arrow-left' }) {
   const paths = {
     menu: <><path d="M4 6h16M4 12h16M4 18h16" /></>,
     sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></>,
@@ -52,7 +52,8 @@ function Icon({ name }: { name: 'menu' | 'sun' | 'moon' | 'mic' | 'stop' | 'plus
     logout: <><path d="M10 5H5v14h5M14 8l4 4-4 4M18 12H9" /></>,
     search: <><circle cx="10.8" cy="10.8" r="6.3" /><path d="m16 16 4.5 4.5" /></>,
     paperclip: <path d="m20.5 11.5-7.8 7.8a5 5 0 0 1-7.1-7.1l8.2-8.2a3.4 3.4 0 0 1 4.8 4.8l-8.3 8.3a1.8 1.8 0 0 1-2.5-2.5l7.8-7.8" />,
-    'arrow-up': <><path d="M12 19V5M6 11l6-6 6 6" /></>
+    'arrow-up': <><path d="M12 19V5M6 11l6-6 6 6" /></>,
+    'arrow-left': <><path d="M19 12H5M12 19l-7-7 7-7" /></>
   }
   return <svg className="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>
 }
@@ -97,7 +98,7 @@ function normalizeQuestion(s: string) {
 }
 
 export default function Page() {
-  const { session, loading: authLoading, error: authError, signIn, signUp, signOut } = useSupabaseSession()
+  const { session, loading: authLoading, error: authError, signIn, signUp, signOut, refreshSession } = useSupabaseSession()
   const { account, updateProfile } = useAccountState(session, API_URL!)
   const [authEmail, setAuthEmail] = useState('')
   const [authPassword, setAuthPassword] = useState('')
@@ -720,6 +721,7 @@ export default function Page() {
   }
 
   async function handleSend() {
+    if (authLoading) return
     const text = input.trim()
     if (!text) return
     const norm = text.toLowerCase().trim()
@@ -761,6 +763,7 @@ export default function Page() {
 
     setIsThinking(true)
     try {
+      const requestSession = session ? (await refreshSession()) || session : null
       try { markTiming('requestSent') } catch (e) {}
       const requestSubject = activeProjectContext?.subject || subject
       const projectContextPayload = activeProjectContext ? {
@@ -769,8 +772,8 @@ export default function Page() {
         subject: requestSubject,
         studyPlanId: activeProjectContext.studyPlanId || null
       } : undefined
-      const res = session
-        ? await authenticatedFetch(API_URL!, session, {
+      const res = requestSession
+        ? await authenticatedFetch(API_URL!, requestSession, {
         method: 'POST',
         body: JSON.stringify({ message: text, conversationId, mode: activeMode, subject: requestSubject, skill: computeSkillForSubject(requestSubject), projectContext: projectContextPayload })
       })
@@ -783,9 +786,9 @@ export default function Page() {
       try { markTiming('responseReceived') } catch (e) {}
       try { sendVoiceMetrics({ textLength: text.length, subject, mode: activeMode }) } catch (e) {}
       if (data?.ok) {
-        if (session && data.conversationId) {
+        if (requestSession && data.conversationId) {
           setConversationId(data.conversationId)
-          const conversationsResponse = await authenticatedFetch(`${API_URL!}/conversations`, session)
+          const conversationsResponse = await authenticatedFetch(`${API_URL!}/conversations`, requestSession)
           const conversationsData = await conversationsResponse.json()
           if (conversationsData?.ok && Array.isArray(conversationsData.conversations)) setConversations(conversationsData.conversations)
         }
@@ -1139,6 +1142,7 @@ export default function Page() {
         <SearchParamsBridge onPrefill={setPrefill} />
       </Suspense>
       <aside className={`workspace-sidebar ${mobileNavOpen ? 'is-open' : ''}`}>
+        <button className="mobile-sidebar-back" onClick={() => setMobileNavOpen(false)} aria-label="Close navigation"><Icon name="arrow-left" /></button>
         <div className="workspace-brand">
           <span className="brand-mark" aria-hidden="true">L</span>
           <span>Lumora Cognita</span>
@@ -1204,7 +1208,7 @@ export default function Page() {
       </aside>
       {mobileNavOpen && <button className="sidebar-backdrop" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />}
       <main className="main" style={{ width: '100%' }}>
-        {workspaceView !== 'chat' ? <div className="workspace-panel-shell">{workspaceError && <div className="workspace-error" role="alert">{workspaceError}</div>}{workspaceView === 'projects' ? renderProjectView() : renderPlanView()}</div> : <div className="chat-container" style={{ width: '100%' }}>
+        {workspaceView !== 'chat' ? <div className="workspace-panel-shell"><button className="mobile-workspace-back" onClick={() => setWorkspaceView('chat')} aria-label="Back to chat"><Icon name="arrow-left" /> <span>Back to chat</span></button>{workspaceError && <div className="workspace-error" role="alert">{workspaceError}</div>}{workspaceView === 'projects' ? renderProjectView() : renderPlanView()}</div> : <div className="chat-container" style={{ width: '100%' }}>
           <div className="chat-area">
             <div className="chat-header">
               <div className="chat-header-left">
