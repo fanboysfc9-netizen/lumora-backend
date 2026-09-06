@@ -26,6 +26,15 @@ router.patch('/topics/:topicId', async (req, res) => {
   } catch (error) { console.error('[study-plans] topic update failed', error); return res.status(404).json({ error: 'topic not found' }) }
 })
 
+router.delete('/:id', async (req, res) => {
+  try {
+    await projectService.deleteStudyPlan(auth(req), req.params.id)
+    return res.status(204).send()
+  } catch (error: any) {
+    return res.status(error?.message === 'study plan not found' ? 404 : 500).json({ error: error?.message || 'study plan could not be deleted' })
+  }
+})
+
 router.get('/:id', async (req, res) => {
   try {
     const studyPlan = await projectService.getStudyPlan(auth(req), req.params.id)

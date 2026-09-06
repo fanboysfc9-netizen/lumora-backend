@@ -10,6 +10,8 @@ export type StudyPlanInput = {
   learner_level?: string
   estimated_duration?: string
   schedule?: string
+  available_time?: string
+  deadline?: string
   project_id?: string
   topics: StudyPlanTopic[]
 }
@@ -59,6 +61,17 @@ export async function listStudyPlans(auth: VerifiedAuth) {
   return data || []
 }
 
+function normalizeTopics(topics: StudyPlanTopic[]) {
+  if (!Array.isArray(topics) || topics.length < 1 || topics.length > 50) throw new Error('study plan must contain 1 to 50 topics')
+  return topics.map((topic, index) => ({
+    week_number: Math.max(1, Number(topic.week_number) || 1),
+    title: requiredText(topic.title, 'topic title').slice(0, 120),
+    lesson: String(topic.lesson || '').trim().slice(0, 500),
+    exercise: String(topic.exercise || '').trim().slice(0, 500),
+    sort_order: index
+  }))
+}
+
 export async function createStudyPlan(auth: VerifiedAuth, input: StudyPlanInput) {
   const planPayload = {
     user_id: auth.userId,
@@ -69,17 +82,20 @@ export async function createStudyPlan(auth: VerifiedAuth, input: StudyPlanInput)
     learner_level: String(input.learner_level || 'beginner').trim(),
     estimated_duration: String(input.estimated_duration || '').trim(),
     schedule: String(input.schedule || '').trim()
+    ,available_time: String(input.available_time || input.schedule || '').trim().slice(0, 80),
+    deadline: input.deadline || null,
+    status: 'active'
   }
   const supabase = client(auth)
   const { data: plan, error: planError } = await supabase.from('study_plans').insert(planPayload).select('*').single()
   if (planError) throw planError
-  const topics = (input.topics || []).map((topic, index) => ({
+  const topics = normalizeTopics(input.topics || []).map((topic) => ({
     study_plan_id: plan.id,
     week_number: Number(topic.week_number) || 1,
     title: requiredText(topic.title, 'topic title'),
     lesson: String(topic.lesson || '').trim(),
     exercise: String(topic.exercise || '').trim(),
-    sort_order: Number(topic.sort_order ?? index)
+    sort_order: topic.sort_order
   }))
   if (topics.length) {
     const { error: topicsError } = await supabase.from('study_plan_topics').insert(topics)
@@ -95,9 +111,23 @@ export async function getStudyPlan(auth: VerifiedAuth, planId: string) {
 }
 
 export async function completeStudyPlanTopic(auth: VerifiedAuth, topicId: string, completed: boolean) {
-  const { data, error } = await client(auth).from('study_plan_topics').update({ completed }).eq('id', topicId).select('*').single()
+  const status = completed ? 'completed' : 'in_progress'
+  const { data, error } = await client(auth).from('study_plan_topics').update({ completed, status, completed_at: completed ? new Date().toISOString() : null }).eq('id', topicId).select('*').single()
   if (error) throw error
+  const { data: topics, error: topicError } = await client(auth).from('study_plan_topics').select('completed,study_plan_id').eq('study_plan_id', data.study_plan_id)
+  if (topicError) throw topicError
+  if (topics?.length && topics.every((topic) => topic.completed)) {
+    await client(auth).from('study_plans').update({ status: 'completed', updated_at: new Date().toISOString() }).eq('id', data.study_plan_id).eq('user_id', auth.userId)
+  } else {
+    await client(auth).from('study_plans').update({ status: 'active', updated_at: new Date().toISOString() }).eq('id', data.study_plan_id).eq('user_id', auth.userId)
+  }
   return data
 }
 
-export default { listProjects, createProject, getProject, listStudyPlans, createStudyPlan, getStudyPlan, completeStudyPlanTopic }
+export async function deleteStudyPlan(auth: VerifiedAuth, planId: string) {
+  const { data, error } = await client(auth).from('study_plans').delete().eq('id', planId).eq('user_id', auth.userId).select('id').maybeSingle()
+  if (error) throw error
+  if (!data) throw new Error('study plan not found')
+}
+
+export default { listProjects, createProject, getProject, listStudyPlans, createStudyPlan, getStudyPlan, completeStudyPlanTopic, deleteStudyPlan }
