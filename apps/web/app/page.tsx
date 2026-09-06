@@ -1,5 +1,5 @@
 "use client"
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useSupabaseSession } from '../hooks/use-supabase-session'
 import { useAccountState } from '../hooks/use-account-state'
@@ -71,6 +71,17 @@ async function readApiJson(response: Response, label: string) {
 
 if (!API_URL) {
   throw new Error('Missing NEXT_PUBLIC_API_URL in environment variables')
+}
+
+function SearchParamsBridge({ onPrefill }: { onPrefill: (value: string | null) => void }) {
+  const search = useSearchParams()
+  const prefill = search?.get('prefill') || null
+
+  useEffect(() => {
+    onPrefill(prefill)
+  }, [onPrefill, prefill])
+
+  return null
 }
 
 const FRANCES_NAME = 'Frances'
@@ -239,7 +250,7 @@ export default function Page() {
       }).catch((err) => console.warn('voice metrics post failed', err))
     } catch (e) { console.warn('sendVoiceMetrics failed', e) }
   }
-  const search = useSearchParams()
+  const [prefill, setPrefill] = useState<string | null>(null)
   const [envError, setEnvError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -278,7 +289,7 @@ export default function Page() {
         console.warn('failed to load history', err)
       }
 
-      const pre = search?.get('prefill')
+      const pre = prefill
       if (pre) {
         setInput(decodeURIComponent(pre))
         setTimeout(() => {
@@ -288,7 +299,7 @@ export default function Page() {
       }
     }
     load()
-  }, [search, session])
+  }, [prefill, session])
 
   useEffect(() => {
     async function loadConversations() {
@@ -1124,6 +1135,9 @@ export default function Page() {
 
   return (
     <div className="workspace-shell">
+      <Suspense fallback={null}>
+        <SearchParamsBridge onPrefill={setPrefill} />
+      </Suspense>
       <aside className={`workspace-sidebar ${mobileNavOpen ? 'is-open' : ''}`}>
         <div className="workspace-brand">
           <span className="brand-mark" aria-hidden="true">L</span>
