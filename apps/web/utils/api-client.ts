@@ -1,5 +1,12 @@
 import { Session } from '@supabase/supabase-js'
 
+export class AuthenticationRequiredError extends Error {
+  constructor() {
+    super('Authentication required. Please sign in to continue.')
+    this.name = 'AuthenticationRequiredError'
+  }
+}
+
 export class ApiAuthenticationError extends Error {
   constructor() {
     super('Your session has expired. Please sign in again.')
@@ -12,7 +19,7 @@ export async function authenticatedFetch(
   session: Pick<Session, 'access_token'> | null,
   init: RequestInit = {}
 ) {
-  if (!session?.access_token) throw new ApiAuthenticationError()
+  if (!session?.access_token) throw new AuthenticationRequiredError()
 
   const headers = new Headers(init.headers)
   headers.set('Authorization', `Bearer ${session.access_token}`)

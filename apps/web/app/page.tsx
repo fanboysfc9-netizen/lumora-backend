@@ -3,8 +3,10 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useSupabaseSession } from '../hooks/use-supabase-session'
 import { useAccountState } from '../hooks/use-account-state'
-import { ApiAuthenticationError, authenticatedFetch } from '../utils/api-client'
+import { ApiAuthenticationError, authenticatedFetch, AuthenticationRequiredError } from '../utils/api-client'
+import { getTimeGreeting } from '../utils/time-greeting'
 import { userScopedStorageKey } from '../utils/user-scoped-state'
+import { buildWorkspaceApiUrl, normalizeApiBaseUrl } from '../utils/api-endpoints'
 
 type Msg = { role: 'user' | 'assistant' | 'system'; text: string; id?: string; subject?: string; mode?: string; targetId?: string }
 type Project = { id: string; title: string; description: string; subject: string; created_at?: string; updated_at?: string }
@@ -56,6 +58,16 @@ function Icon({ name }: { name: 'menu' | 'sun' | 'moon' | 'mic' | 'stop' | 'plus
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL
+const API_ROOT = normalizeApiBaseUrl(API_URL)
+
+async function readApiJson(response: Response, label: string) {
+  const body = await response.text()
+  try {
+    return JSON.parse(body)
+  } catch {
+    throw new Error(`${label} returned ${response.status} ${response.headers.get('content-type') || 'non-JSON response'}`)
+  }
+}
 
 if (!API_URL) {
   throw new Error('Missing NEXT_PUBLIC_API_URL in environment variables')
@@ -81,6 +93,7 @@ export default function Page() {
   const [authFormError, setAuthFormError] = useState<string | null>(null)
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin')
+  const [pendingWorkspaceView, setPendingWorkspaceView] = useState<'projects' | 'plans' | null>(null)
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [profileName, setProfileName] = useState('')
   const [profileSaving, setProfileSaving] = useState(false)
@@ -297,29 +310,23 @@ export default function Page() {
 
   useEffect(() => {
     if (!session) {
-      try {
-        const nextProjects = JSON.parse(localStorage.getItem('lumora_anonymous_projects') || '[]')
-        const nextPlans = JSON.parse(localStorage.getItem('lumora_anonymous_study_plans') || '[]')
-        setProjects(nextProjects)
-        setStudyPlans(nextPlans)
-        if (selectedProject && !nextProjects.some((project: Project) => project.id === selectedProject.id)) {
-          setSelectedProject(null)
-          setActiveProjectContext(null)
-        }
-      } catch { setProjects([]); setStudyPlans([]) }
+        setProjects([])
+        setStudyPlans([])
+        setProjectLoading(false)
+        setStudyPlanLoading(false)
       return
     }
 
     setProjectLoading(true)
     setStudyPlanLoading(true)
     Promise.all([
-      authenticatedFetch(`${API_URL}/projects`, session).then(async (res) => {
-        const data = await res.json()
+      authenticatedFetch(buildWorkspaceApiUrl(API_URL, '/projects'), session).then(async (res) => {
+        const data = await readApiJson(res, 'Projects endpoint')
         if (!res.ok) throw new Error(data?.error || 'Projects unavailable')
         return data.projects || []
       }),
-      authenticatedFetch(`${API_URL}/study-plans`, session).then(async (res) => {
-        const data = await res.json()
+      authenticatedFetch(buildWorkspaceApiUrl(API_URL, '/study-plans'), session).then(async (res) => {
+        const data = await readApiJson(res, 'Study Plans endpoint')
         if (!res.ok) throw new Error(data?.error || 'Study plans unavailable')
         return data.studyPlans || []
       })
@@ -413,12 +420,15 @@ export default function Page() {
     }
   }, [messages, isThinking])
 
-  useEffect(() => {
+  const ensureRecognition = useCallback(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     if (!SpeechRecognition) {
       recognitionRef.current = null
-      return
+      return null
     }
+
+    if (recognitionRef.current) return recognitionRef.current
+
     try {
       const r = new SpeechRecognition()
       r.lang = 'en-US'
@@ -460,7 +470,6 @@ export default function Page() {
 
       r.onend = () => {
         try {
-          // If we intentionally stopped (user or silence), finalize
           if (userInitiatedStopRef.current) {
             setIsRecording(false)
             setMicState('processing')
@@ -478,7 +487,6 @@ export default function Page() {
           }
         } catch (e) {}
 
-        // Unexpected end while still supposed to be listening — attempt quick restart
         if (listeningActiveRef.current) {
           setTimeout(() => {
             try { recognitionRef.current && recognitionRef.current.start() } catch (e) { console.warn('restart failed', e) }
@@ -499,20 +507,27 @@ export default function Page() {
       }
 
       recognitionRef.current = r
+      return r
     } catch (e) {
       recognitionRef.current = null
+      return null
     }
+  }, [])
+
+  useEffect(() => {
+    ensureRecognition()
     return () => {
       if (animationRef.current) cancelAnimationFrame(animationRef.current)
       if (vadIntervalRef.current) { clearInterval(vadIntervalRef.current); vadIntervalRef.current = null }
       if (streamRef.current) { try { streamRef.current.getTracks().forEach((t: any) => t.stop()) } catch (_) {} streamRef.current = null }
       if (audioContextRef.current) { try { audioContextRef.current.close() } catch (_) {} audioContextRef.current = null }
     }
-  }, [])
+  }, [ensureRecognition])
 
   // Audio analyser + waveform helpers
   function startAnalyser(stream: MediaStream) {
     try {
+      if (audioContextRef.current || analyserRef.current) return
       const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext
       if (!AudioCtx) return
       const ac = new AudioCtx()
@@ -564,24 +579,31 @@ export default function Page() {
 
   const startRecording = useCallback(async () => {
     if (isRecording) return
+
+    const recognition = ensureRecognition()
+    if (!recognition) {
+      setMicError('Speech recognition not supported in this browser')
+      setMicState('error')
+      return
+    }
+
     setMicError(null)
     preRecordingInputRef.current = input || ''
     finalTranscriptRef.current = ''
     interimTranscriptRef.current = ''
     userInitiatedStopRef.current = false
     listeningActiveRef.current = true
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (!SpeechRecognition) {
-      setMicError('Speech recognition not supported in this browser')
-      setMicState('error')
-      return
-    }
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      streamRef.current = stream
-      startAnalyser(stream)
+      if (!streamRef.current) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        streamRef.current = stream
+      }
+      if (!audioContextRef.current || !analyserRef.current) {
+        startAnalyser(streamRef.current!)
+      }
       startVADMonitor()
-      try { recognitionRef.current.start() } catch (e) { console.warn('recognition.start failed', e) }
+      try { recognition.start() } catch (e) { console.warn('recognition start skipped', e) }
       setIsRecording(true)
       setMicState('listening')
     } catch (err) {
@@ -592,17 +614,17 @@ export default function Page() {
       if (streamRef.current) { try { streamRef.current.getTracks().forEach((t) => t.stop()) } catch (_) {} streamRef.current = null }
       stopAnalyser()
     }
-  }, [input, isRecording])
+  }, [ensureRecognition, input, isRecording])
 
   const stopRecording = useCallback(() => {
     if (!recognitionRef.current) return
     userInitiatedStopRef.current = true
+    listeningActiveRef.current = false
     try {
       recognitionRef.current.stop()
     } catch (e) {
       console.warn('stopRecording failed', e)
     }
-    // actual analyser/stream cleanup handled in recognition.onend
   }, [])
 
   function interceptSpecialQuestions(text: string): string | null {
@@ -769,7 +791,7 @@ export default function Page() {
       }
     } catch (err) {
       console.error(err)
-      setMessages((m) => [...m, { role: 'assistant', text: err instanceof ApiAuthenticationError ? err.message : 'I could not reach Cognita. Please try again.' }])
+      setMessages((m) => [...m, { role: 'assistant', text: err instanceof ApiAuthenticationError ? err.message : err instanceof AuthenticationRequiredError ? err.message : 'I could not reach Cognita. Please try again.' }])
     } finally {
       setIsThinking(false)
     }
@@ -828,11 +850,15 @@ export default function Page() {
       setProfileSaving(false)
       setProfileMessage(result.error ? result.error.message : 'Profile updated')
     }
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 60000)
+    return () => window.clearInterval(timer)
+  }, [])
+
   const activeTutor = tutorForMode(activeMode)
-  const greetings = displayName
-    ? [`What's up, ${displayName}?`, `Good to see you, ${displayName}.`, `What are we learning today, ${displayName}?`, `Ready to keep learning, ${displayName}?`]
-    : ['What would you like to learn?', 'Where should we start?']
-  const greeting = greetings[(new Date().getDate()) % greetings.length]
+  const userGreeting = getTimeGreeting(now)
+  const greeting = displayName ? `${userGreeting}, ${displayName}.` : `${userGreeting}. What would you like to learn?`
 
   async function handleSignIn(event: React.FormEvent) {
     event.preventDefault()
@@ -841,10 +867,24 @@ export default function Page() {
       ? await signIn(authEmail.trim(), authPassword)
       : await signUp(authEmail.trim(), authPassword, termsAccepted)
     if (result.error) setAuthFormError(result.error.message)
-    else { setAuthPassword(''); setShowAuthModal(false) }
+    else {
+      setAuthPassword('')
+      setShowAuthModal(false)
+      if (pendingWorkspaceView) {
+        setWorkspaceView(pendingWorkspaceView)
+        setPendingWorkspaceView(null)
+      }
+    }
   }
 
   function openWorkspace(view: 'chat' | 'projects' | 'plans') {
+    if (view !== 'chat' && !session) {
+      setWorkspaceView(view)
+      setPendingWorkspaceView(view)
+      setShowAuthModal(true)
+      setMobileNavOpen(false)
+      return
+    }
     setWorkspaceView(view)
     if (view === 'chat') {
       setSelectedPlan(null)
@@ -927,7 +967,7 @@ export default function Page() {
     try {
       const next = [...projects, project]
       if (session) {
-        const response = await authenticatedFetch(`${API_URL}/projects`, session, { method: 'POST', body: JSON.stringify(project) })
+        const response = await authenticatedFetch(buildWorkspaceApiUrl(API_URL, '/projects'), session, { method: 'POST', body: JSON.stringify(project) })
         const data = await response.json()
         if (!response.ok) throw new Error(data.error || 'Project could not be created')
         const createdProject = data.project
@@ -955,7 +995,7 @@ export default function Page() {
     const plan: StudyPlan = { id: `local-plan-${Date.now()}`, title: planTitle.trim(), objective: planObjective.trim(), subject: planSubject.trim(), learner_level: planLevel, estimated_duration: '', schedule: planTime, available_time: planTime, deadline: planDeadline || null, status: 'active', project_id: planProjectId, study_plan_topics: topics }
     try {
       if (session) {
-        const response = await authenticatedFetch(`${API_URL}/study-plans`, session, { method: 'POST', body: JSON.stringify({ ...plan, topics, available_time: planTime, deadline: planDeadline || null }) })
+        const response = await authenticatedFetch(buildWorkspaceApiUrl(API_URL, '/study-plans'), session, { method: 'POST', body: JSON.stringify({ ...plan, topics, available_time: planTime, deadline: planDeadline || null }) })
         const data = await response.json()
         if (!response.ok) throw new Error(data.error || 'Study plan could not be created')
         const createdPlan = data.studyPlan
@@ -985,7 +1025,7 @@ export default function Page() {
     const completed = !topic.completed
     try {
       if (session && topic.id) {
-        const response = await authenticatedFetch(`${API_URL}/study-plans/topics/${topic.id}`, session, { method: 'PATCH', body: JSON.stringify({ completed }) })
+        const response = await authenticatedFetch(`${buildWorkspaceApiUrl(API_URL, '/study-plans')}/topics/${topic.id}`, session, { method: 'PATCH', body: JSON.stringify({ completed }) })
         if (!response.ok) throw new Error('Topic could not be updated')
       }
       const update = (item: StudyPlan) => item.id !== plan.id ? item : { ...item, study_plan_topics: (item.study_plan_topics || []).map((current) => current.id === topic.id ? { ...current, completed } : current) }
@@ -997,6 +1037,7 @@ export default function Page() {
   }
 
   function renderProjectView() {
+    if (!session) return <section className="workspace-content"><h1>Projects</h1><p className="workspace-muted">Sign in to use Projects</p><p className="workspace-muted">Create projects, organize your learning, and give Cognita persistent context.</p><div className="project-action-row"><button className="primary-button" onClick={() => { setAuthMode('signin'); setShowAuthModal(true) }}>Log in</button><button className="text-button" onClick={() => { setAuthMode('signup'); setShowAuthModal(true) }}>Create account</button></div></section>
     if (selectedProject) {
       const plan = studyPlans.find((item) => item.project_id === selectedProject.id)
       const projectInfo = [
@@ -1065,6 +1106,7 @@ export default function Page() {
   }
 
   function renderPlanView() {
+    if (!session) return <section className="workspace-content"><h1>Study Plans</h1><p className="workspace-muted">Sign in to create and track Study Plans</p><p className="workspace-muted">Your learning plans, progress, topics, and deadlines are saved to your account.</p><div className="project-action-row"><button className="primary-button" onClick={() => { setAuthMode('signin'); setShowAuthModal(true) }}>Log in</button><button className="text-button" onClick={() => { setAuthMode('signup'); setShowAuthModal(true) }}>Create account</button></div></section>
     if (selectedPlan) {
       const topics = selectedPlan.study_plan_topics || []
       const completed = topics.filter((topic) => topic.completed).length
@@ -1184,7 +1226,7 @@ export default function Page() {
             {messages.length === 0 && !isThinking && (
               <div className="welcome-hero" role="region" aria-label="Welcome">
                 <div className="welcome-card">
-                  <div className="welcome-title">Good evening, {displayName || 'there'}.</div>
+                  <div className="welcome-title">{greeting}</div>
                   <div className="welcome-sub">What is on your mind?</div>
                   <div className="welcome-actions">
                     <button className="action-btn" onClick={() => { setInput('Explain a concept'); setTimeout(() => handleSend(), 100) }}>Explain a concept</button>

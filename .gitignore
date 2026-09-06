@@ -12,3 +12,6 @@ build/
 .next/
 out/
 .temp/
+.vercel
+.env*
+*.tsbuildinfo

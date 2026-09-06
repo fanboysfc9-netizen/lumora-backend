@@ -64,6 +64,11 @@ export async function run() {
   equal(anonymous.res.statusCode, 200, 'Anonymous chat requests must pass the optional auth boundary')
   equal(anonymous.continued, true, 'Anonymous chat requests must continue without a token')
 
+  const guestChatRequest = request()
+  const guestChat = await optionallyAuthenticate(guestChatRequest, { auth: { getUser: async () => ({ data: { user: { id: 'guest-user' } }, error: null }) } })
+  equal(guestChat.res.statusCode, 200, 'Guest chat request without a bearer token must be treated as anonymous and continue')
+  equal(guestChat.continued, true, 'Guest chat flow must not require a bearer token to proceed')
+
   const optionalInvalid = await optionallyAuthenticate(request('Bearer expired-token'), { auth: { getUser: async () => ({ data: { user: null }, error: new Error('expired') }) } })
   equal(optionalInvalid.res.statusCode, 401, 'Provided invalid tokens must still be rejected')
 
