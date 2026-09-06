@@ -40,6 +40,7 @@ export function useSupabaseSession() {
     if (!supabase) return { error: new Error('Supabase authentication is not configured.') }
     const result = await supabase.auth.signInWithPassword({ email, password })
     if (result.error) setError(result.error.message)
+    if (result.data.session) setSession(result.data.session)
     return result
   }
 
@@ -49,6 +50,7 @@ export function useSupabaseSession() {
     if (!termsAccepted) return { error: new Error('Accept the Terms & Conditions to create an account.') }
     const result = await supabase.auth.signUp({ email, password, options: { data: { terms_accepted: true } } })
     if (result.error) setError(result.error.message)
+    if (result.data.session) setSession(result.data.session)
     return result
   }
 

@@ -42,6 +42,22 @@ export async function run() {
   await authenticatedFetch('/api/chat', { access_token: 'test-token' } as any, { method: 'POST' })
   assert(receivedAuthorization === 'Bearer test-token', 'Authenticated requests must include a bearer token')
 
+  let projectAuthorization: string | null = null
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    projectAuthorization = new Headers(init?.headers).get('Authorization')
+    return new Response(JSON.stringify({ ok: true, projects: [] }), { status: 200 })
+  }) as typeof fetch
+  await authenticatedFetch('https://backend.example.com/api/projects', { access_token: 'current-token' } as any)
+  assert(projectAuthorization === 'Bearer current-token', 'Authenticated project requests must include the current bearer token')
+
+  let studyPlanAuthorization: string | null = null
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    studyPlanAuthorization = new Headers(init?.headers).get('Authorization')
+    return new Response(JSON.stringify({ ok: true, studyPlans: [] }), { status: 200 })
+  }) as typeof fetch
+  await authenticatedFetch('https://backend.example.com/api/study-plans', { access_token: 'current-token' } as any)
+  assert(studyPlanAuthorization === 'Bearer current-token', 'Authenticated study plan requests must include the current bearer token')
+
   globalThis.fetch = (async () => new Response('{}', { status: 401 })) as typeof fetch
   let expiredRejected = false
   try { await authenticatedFetch('/api/chat', { access_token: 'test-token' } as any) } catch (error) { expiredRejected = error instanceof ApiAuthenticationError }
