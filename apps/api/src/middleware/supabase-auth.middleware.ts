@@ -29,6 +29,8 @@ function logSupabaseConfigDiagnostic() {
   let host = 'unknown'
   try { host = url ? new URL(url).hostname : 'invalid' } catch {}
   console.error('[AUTH_DIAGNOSTIC] supabase_config', JSON.stringify({
+    nodeVersion: process.version,
+    websocketAvailable: typeof globalThis.WebSocket !== 'undefined',
     urlConfigured: Boolean(url),
     host,
     anonKeyConfigured: anonConfigured,
@@ -37,9 +39,10 @@ function logSupabaseConfigDiagnostic() {
   }))
 }
 
-function logSupabaseVerificationDiagnostic(error: any, data: any) {
+function logSupabaseVerificationDiagnostic(stage: 'get_user_result' | 'get_user_exception', error: any, data: any) {
   console.error('[AUTH_DIAGNOSTIC] token_verification', JSON.stringify({
-    result: error || !data?.user?.id ? 'failed' : 'success',
+    phase: stage,
+    result: stage === 'get_user_result' ? (error || !data?.user?.id ? 'failed' : 'success') : 'exception',
     status: typeof error?.status === 'number' ? error.status : undefined,
     code: typeof error?.code === 'string' ? error.code : undefined,
     name: typeof error?.name === 'string' ? error.name : undefined,
@@ -52,9 +55,23 @@ function getSupabaseClient(): SupabaseClient {
   const key = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY
   if (!url || !key) throw new Error('Supabase authentication is not configured')
 
-  return createClient(url, key, {
-    auth: { autoRefreshToken: false, persistSession: false }
-  })
+  try {
+    return createClient(url, key, {
+      auth: { autoRefreshToken: false, persistSession: false }
+    })
+  } catch (error) {
+    const runtimeError = new Error((error as any)?.message || 'Supabase client construction failed') as Error & { code?: string }
+    runtimeError.name = 'SupabaseClientConstructionError'
+    runtimeError.code = 'SUPABASE_CLIENT_CONSTRUCTION_ERROR'
+    console.error('[AUTH_DIAGNOSTIC] client_construction_exception', JSON.stringify({
+      name: runtimeError.name,
+      code: runtimeError.code,
+      nodeVersion: process.version,
+      websocketAvailable: typeof globalThis.WebSocket !== 'undefined',
+      message: sanitizeAuthDiagnosticMessage(runtimeError.message)
+    }))
+    throw runtimeError
+  }
 }
 
 async function authenticateWithClient(req: Request, res: Response, next: NextFunction, client?: Pick<SupabaseClient, 'auth'>) {
@@ -65,18 +82,30 @@ async function authenticateWithClient(req: Request, res: Response, next: NextFun
     logSupabaseConfigDiagnostic()
     const supabase = client || getSupabaseClient()
     const { data, error } = await supabase.auth.getUser(token)
-    logSupabaseVerificationDiagnostic(error, data)
+    logSupabaseVerificationDiagnostic('get_user_result', error, data)
     const userId = data.user?.id
     if (error || !userId) return res.status(401).json({ error: 'invalid or expired authentication' })
 
     req.auth = { userId, accessToken: token }
     return next()
   } catch (error) {
+    const errorInfo = error as any
+    if (errorInfo?.code === 'SUPABASE_CLIENT_CONSTRUCTION_ERROR') {
+      console.error('[AUTH_DIAGNOSTIC] client_construction_exception', JSON.stringify({
+        name: typeof errorInfo?.name === 'string' ? errorInfo.name : undefined,
+        code: typeof errorInfo?.code === 'string' ? errorInfo.code : undefined,
+        nodeVersion: process.version,
+        websocketAvailable: typeof globalThis.WebSocket !== 'undefined',
+        message: sanitizeAuthDiagnosticMessage(errorInfo?.message)
+      }))
+      return res.status(500).json({ error: 'authentication service unavailable' })
+    }
+
     console.error('[AUTH_DIAGNOSTIC] token_verification_exception', JSON.stringify({
-      name: typeof (error as any)?.name === 'string' ? (error as any).name : undefined,
-      status: typeof (error as any)?.status === 'number' ? (error as any).status : undefined,
-      code: typeof (error as any)?.code === 'string' ? (error as any).code : undefined,
-      message: sanitizeAuthDiagnosticMessage((error as any)?.message)
+      name: typeof errorInfo?.name === 'string' ? errorInfo.name : undefined,
+      status: typeof errorInfo?.status === 'number' ? errorInfo.status : undefined,
+      code: typeof errorInfo?.code === 'string' ? errorInfo.code : undefined,
+      message: sanitizeAuthDiagnosticMessage(errorInfo?.message)
     }))
     return res.status(401).json({ error: 'invalid or expired authentication' })
   }

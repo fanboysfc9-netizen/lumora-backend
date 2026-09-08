@@ -45,6 +45,27 @@ async function optionallyAuthenticate(req: any, client: any) {
 export async function run() {
   console.log('[TEST] auth boundary')
 
+  const supabaseModule = require('@supabase/supabase-js') as any
+  const originalCreateClient = supabaseModule.createClient
+
+  const runtimeFailure = await (async () => {
+    process.env.SUPABASE_URL = 'https://example.supabase.co'
+    process.env.SUPABASE_ANON_KEY = 'anon-key'
+    supabaseModule.createClient = () => {
+      throw new Error('Node.js detected but native WebSocket not found.')
+    }
+
+    const req = request('Bearer valid-token')
+    const res = response()
+    await createSupabaseAuthMiddleware()(req, res as any, () => {
+      throw new Error('route should not continue when client construction fails')
+    })
+    return { res }
+  })()
+
+  equal(runtimeFailure.res.statusCode, 500, 'Client construction runtime failure must be treated as a server error, not expired auth')
+  supabaseModule.createClient = originalCreateClient
+
   const missing = await authenticate(request(), { auth: { getUser: async () => ({ data: {}, error: null }) } })
   equal(missing.res.statusCode, 401, 'Missing authentication must be rejected')
   equal(missing.continued, false, 'Missing authentication must not continue')
