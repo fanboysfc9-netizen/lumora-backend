@@ -20,6 +20,16 @@ router.post('/', async (req, res) => {
   catch (error: any) { return res.status(400).json({ error: error?.message || 'project could not be created' }) }
 })
 
+router.patch('/:id', async (req, res) => {
+  try { return res.json({ ok: true, project: await projectService.updateProject(auth(req), req.params.id, req.body || {}) }) }
+  catch (error: any) { return res.status(error?.message === 'project not found' ? 404 : 400).json({ error: error?.message || 'project could not be updated' }) }
+})
+
+router.delete('/:id', async (req, res) => {
+  try { await projectService.deleteProject(auth(req), req.params.id); return res.status(204).send() }
+  catch (error: any) { return res.status(error?.message === 'project not found' ? 404 : 500).json({ error: error?.message || 'project could not be archived' }) }
+})
+
 router.get('/:id', async (req, res) => {
   try {
     const project = await projectService.getProject(auth(req), req.params.id)

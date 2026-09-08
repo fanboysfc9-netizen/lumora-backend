@@ -20,6 +20,11 @@ router.post('/', async (req, res) => {
   catch (error: any) { return res.status(400).json({ error: error?.message || 'study plan could not be created' }) }
 })
 
+router.patch('/:id', async (req, res) => {
+  try { return res.json({ ok: true, studyPlan: await projectService.updateStudyPlan(auth(req), req.params.id, req.body || {}) }) }
+  catch (error: any) { return res.status(error?.message === 'study plan not found' ? 404 : 400).json({ error: error?.message || 'study plan could not be updated' }) }
+})
+
 router.patch('/topics/:topicId', async (req, res) => {
   try {
     return res.json({ ok: true, topic: await projectService.completeStudyPlanTopic(auth(req), req.params.topicId, Boolean(req.body?.completed)) })

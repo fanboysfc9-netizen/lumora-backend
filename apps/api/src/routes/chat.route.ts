@@ -3,6 +3,7 @@ import cognitaService from '../services/cognita.service'
 import authenticateSupabaseRequest, { createOptionalSupabaseAuthMiddleware } from '../middleware/supabase-auth.middleware'
 import supabaseChatService from '../services/supabase-chat.service'
 import { mapClientMode } from '../services/chat-mode'
+import { resolveLearningContext } from '../services/learning-context.service'
 
 const router = Router()
 
@@ -13,8 +14,11 @@ router.post('/', createOptionalSupabaseAuthMiddleware(), async (req: Request, re
     if (!message) return res.status(400).json({ error: 'message is required' })
     const bodyMode = req.body?.mode as string | undefined
     const mappedMode = mapClientMode(bodyMode)
+    const learningContext = userId
+      ? await resolveLearningContext({ userId, accessToken: req.auth!.accessToken }, req.body?.learningContext || req.body?.projectContext)
+      : null
 
-    const result = await cognitaService.handleMessage({ userId, message, conversationId, mode: mappedMode })
+    const result = await cognitaService.handleMessage({ userId, message, conversationId, mode: mappedMode, learningContext })
     if (!userId) return res.json({ ok: true, ...result })
 
     const persistedConversationId = await supabaseChatService.persistExchange(

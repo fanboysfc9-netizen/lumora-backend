@@ -9,10 +9,10 @@ import { userScopedStorageKey } from '../utils/user-scoped-state'
 import { buildWorkspaceApiUrl, normalizeApiBaseUrl } from '../utils/api-endpoints'
 
 type Msg = { role: 'user' | 'assistant' | 'system'; text: string; id?: string; subject?: string; mode?: string; targetId?: string }
-type Project = { id: string; title: string; description: string; subject: string; created_at?: string; updated_at?: string }
+type Project = { id: string; title: string; description: string; subject: string; goal?: string; deadline?: string | null; status?: string; progress_percent?: number; created_at?: string; updated_at?: string }
 type PlanTopic = { id?: string; week_number: number; title: string; lesson?: string; exercise?: string; completed: boolean; sort_order?: number }
 type StudyPlan = { id: string; title: string; objective: string; subject: string; learner_level: string; estimated_duration: string; schedule: string; available_time?: string; deadline?: string | null; status?: string; project_id?: string | null; study_plan_topics?: PlanTopic[] }
-type ProjectContext = { projectId: string; projectName: string; subject?: string; studyPlanId?: string | null }
+type ProjectContext = { projectId?: string; projectName: string; subject?: string; studyPlanId?: string | null }
 type Conversation = { id: string; title: string; created_at: string; updated_at: string }
 
 type TutorName = 'Nira' | 'Elara' | 'Solara'
@@ -126,6 +126,8 @@ export default function Page() {
   const [projectTitle, setProjectTitle] = useState('')
   const [projectDescription, setProjectDescription] = useState('')
   const [projectSubject, setProjectSubject] = useState('')
+  const [projectGoal, setProjectGoal] = useState('')
+  const [projectDeadline, setProjectDeadline] = useState('')
   const [projectLoading, setProjectLoading] = useState(false)
   const [studyPlanLoading, setStudyPlanLoading] = useState(false)
   const [projectTab, setProjectTab] = useState<'overview' | 'chats' | 'study-plan' | 'resources' | 'progress' | 'files'>('overview')
@@ -976,7 +978,7 @@ export default function Page() {
 
   async function createProject(event: React.FormEvent) {
     event.preventDefault()
-    const project = { id: `local-project-${Date.now()}`, title: projectTitle.trim(), description: projectDescription.trim(), subject: projectSubject.trim() }
+    const project = { id: `local-project-${Date.now()}`, title: projectTitle.trim(), description: projectDescription.trim(), subject: projectSubject.trim(), goal: projectGoal.trim(), deadline: projectDeadline || null }
     if (!project.title) return
     try {
       const next = [...projects, project]
@@ -998,8 +1000,31 @@ export default function Page() {
         setProjects(next)
         localStorage.setItem('lumora_anonymous_projects', JSON.stringify(next))
       }
-      setProjectTitle(''); setProjectDescription(''); setProjectSubject(''); setShowProjectForm(false)
+      setProjectTitle(''); setProjectDescription(''); setProjectSubject(''); setProjectGoal(''); setProjectDeadline(''); setShowProjectForm(false)
     } catch (error) { setWorkspaceError(error instanceof Error ? error.message : 'Project could not be created') }
+  }
+
+  async function archiveProject(project: Project) {
+    if (!session || !window.confirm(`Archive "${project.title}"?`)) return
+    try {
+      const response = await authenticatedFetch(`${buildWorkspaceApiUrl(API_URL, '/projects')}/${project.id}`, session, { method: 'DELETE' })
+      if (!response.ok) throw new Error('Project could not be archived')
+      setProjects((items) => items.filter((item) => item.id !== project.id))
+      if (selectedProject?.id === project.id) { setSelectedProject(null); setActiveProjectContext(null) }
+    } catch (error) { setWorkspaceError(error instanceof Error ? error.message : 'Project could not be archived') }
+  }
+
+  async function updateProject(project: Project) {
+    if (!session) return
+    const goal = window.prompt('Project goal', project.goal || project.description || '')
+    if (goal === null) return
+    try {
+      const response = await authenticatedFetch(`${buildWorkspaceApiUrl(API_URL, '/projects')}/${project.id}`, session, { method: 'PATCH', body: JSON.stringify({ goal }) })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data?.error || 'Project could not be updated')
+      setProjects((items) => items.map((item) => item.id === project.id ? data.project : item))
+      setSelectedProject((item) => item?.id === project.id ? data.project : item)
+    } catch (error) { setWorkspaceError(error instanceof Error ? error.message : 'Project could not be updated') }
   }
 
   async function createPlan(event: React.FormEvent) {
@@ -1050,6 +1075,16 @@ export default function Page() {
     } catch (error) { setWorkspaceError(error instanceof Error ? error.message : 'Topic could not be updated') }
   }
 
+  async function archiveStudyPlan(plan: StudyPlan) {
+    if (!session || !window.confirm(`Archive "${plan.title}"?`)) return
+    try {
+      const response = await authenticatedFetch(`${buildWorkspaceApiUrl(API_URL, '/study-plans')}/${plan.id}`, session, { method: 'DELETE' })
+      if (!response.ok) throw new Error('Study plan could not be archived')
+      setStudyPlans((items) => items.filter((item) => item.id !== plan.id))
+      if (selectedPlan?.id === plan.id) { setSelectedPlan(null); setActiveProjectContext(null) }
+    } catch (error) { setWorkspaceError(error instanceof Error ? error.message : 'Study plan could not be archived') }
+  }
+
   function renderProjectView() {
     if (!session) return <section className="workspace-content"><h1>Projects</h1><p className="workspace-muted">Sign in to use Projects</p><p className="workspace-muted">Create projects, organize your learning, and give Cognita persistent context.</p><div className="project-action-row"><button className="primary-button" onClick={() => { setAuthMode('signin'); setShowAuthModal(true) }}>Log in</button><button className="text-button" onClick={() => { setAuthMode('signup'); setShowAuthModal(true) }}>Create account</button></div></section>
     if (selectedProject) {
@@ -1084,6 +1119,8 @@ export default function Page() {
             <div className="project-action-row">
               <button className="primary-button" onClick={() => setWorkspaceView('chat')}>Continue learning</button>
               {plan ? <button className="text-button" onClick={() => { setSelectedPlan(plan); setWorkspaceView('plans'); setSelectedProject(null) }}>Open study plan</button> : <button className="primary-button" onClick={() => { setPlanProjectId(selectedProject.id); setPlanSubject(selectedProject.subject); setPlanTitle(`${selectedProject.title} Plan`); setShowPlanForm(true) }}>Create study plan</button>}
+              <button className="text-button" onClick={() => updateProject(selectedProject)}>Edit goal</button>
+              <button className="text-button" onClick={() => archiveProject(selectedProject)}>Archive</button>
             </div>
           </div>
           <div className="project-overview-card">
@@ -1115,7 +1152,7 @@ export default function Page() {
 
     return <section className="workspace-content">
       <div className="workspace-heading"><div><h1>Projects</h1><p className="workspace-muted">Keep conversations, plans, and learning context together.</p></div><button className="primary-button" onClick={() => session ? setShowProjectForm(true) : setShowAuthModal(true)}>New project</button></div>
-      {projects.length === 0 ? <div className="empty-workspace">Create a learning project to keep conversations, plans, and resources together.</div> : <div className="workspace-list">{projects.map((project) => <button className="workspace-list-item" key={project.id} onClick={() => openProject(project)}><strong>{project.title}</strong><span>{project.subject || 'Learning project'}</span><small>{project.description || 'No objective added yet.'}</small></button>)}</div>}
+      {projects.length === 0 ? <div className="empty-workspace">Create a learning project to keep conversations, plans, and resources together.</div> : <div className="workspace-list">{projects.map((project) => <button className="workspace-list-item" key={project.id} onClick={() => openProject(project)}><strong>{project.title}</strong><span>{project.subject || 'Learning project'} · {project.status || 'active'} · {project.progress_percent || 0}%</span><small>{project.goal || project.description || 'No objective added yet.'}</small></button>)}</div>}
     </section>
   }
 
@@ -1126,14 +1163,14 @@ export default function Page() {
       const completed = topics.filter((topic) => topic.completed).length
       const completion = topics.length ? Math.round((completed / topics.length) * 100) : 0
       const groupedWeeks = Array.from(new Set(topics.map((topic) => topic.week_number))).sort((a, b) => a - b)
-      return <section className="workspace-content"><button className="back-link" onClick={() => setSelectedPlan(null)}>Study Plans</button><h1>{selectedPlan.title}</h1><p className="workspace-muted">{selectedPlan.objective || `Learn ${selectedPlan.subject}.`}</p><div className="plan-summary-grid"><div className="plan-summary-item"><span>Subject</span><strong>{selectedPlan.subject || 'Unspecified'}</strong></div><div className="plan-summary-item"><span>Level</span><strong>{selectedPlan.learner_level || 'Beginner'}</strong></div><div className="plan-summary-item"><span>Time</span><strong>{selectedPlan.available_time || selectedPlan.schedule || 'Flexible'}</strong></div><div className="plan-summary-item"><span>Deadline</span><strong>{selectedPlan.deadline || 'Optional'}</strong></div></div><div className="plan-progress">Progress: {completion}% ({completed}/{topics.length || 0} complete)</div><button className="primary-button" onClick={() => { setActiveProjectContext({ projectId: selectedPlan.project_id || '', projectName: selectedPlan.title, subject: selectedPlan.subject, studyPlanId: selectedPlan.id }); setWorkspaceView('chat'); setInput(`Continue my study plan: ${topics.find((topic) => !topic.completed)?.title || selectedPlan.subject}`) }}>Continue current topic</button>{groupedWeeks.map((week) => <div className="plan-week" key={week}><h2>Week {week}</h2>{topics.filter((topic) => topic.week_number === week).map((topic) => <label className="plan-topic" key={topic.id || `${topic.title}-${week}`}><input type="checkbox" checked={topic.completed} onChange={() => toggleTopic(selectedPlan, topic)} /><span><strong>{topic.title}</strong><small>{topic.lesson || 'Keep practising this topic.'}</small></span></label>)}</div>)}</section>
+      return <section className="workspace-content"><button className="back-link" onClick={() => setSelectedPlan(null)}>Study Plans</button><h1>{selectedPlan.title}</h1><p className="workspace-muted">{selectedPlan.objective || `Learn ${selectedPlan.subject}.`}</p><div className="plan-summary-grid"><div className="plan-summary-item"><span>Subject</span><strong>{selectedPlan.subject || 'Unspecified'}</strong></div><div className="plan-summary-item"><span>Level</span><strong>{selectedPlan.learner_level || 'Beginner'}</strong></div><div className="plan-summary-item"><span>Time</span><strong>{selectedPlan.available_time || selectedPlan.schedule || 'Flexible'}</strong></div><div className="plan-summary-item"><span>Deadline</span><strong>{selectedPlan.deadline || 'Optional'}</strong></div></div><div className="plan-progress">Progress: {completion}% ({completed}/{topics.length || 0} complete)</div><div className="project-action-row"><button className="primary-button" onClick={() => { setActiveProjectContext({ projectId: selectedPlan.project_id || undefined, projectName: selectedPlan.title, subject: selectedPlan.subject, studyPlanId: selectedPlan.id }); setWorkspaceView('chat'); setInput(`Continue my study plan: ${topics.find((topic) => !topic.completed)?.title || selectedPlan.subject}`) }}>Continue current topic</button><button className="text-button" onClick={() => archiveStudyPlan(selectedPlan)}>Archive plan</button></div>{groupedWeeks.map((week) => <div className="plan-week" key={week}><h2>Week {week}</h2>{topics.filter((topic) => topic.week_number === week).map((topic) => <label className="plan-topic" key={topic.id || `${topic.title}-${week}`}><input type="checkbox" checked={topic.completed} onChange={() => toggleTopic(selectedPlan, topic)} /><span><strong>{topic.title}</strong><small>{topic.lesson || 'Keep practising this topic.'}</small></span></label>)}</div>)}</section>
     }
 
     if (studyPlanLoading) {
       return <section className="workspace-content"><div className="empty-workspace">Loading your study plans…</div></section>
     }
 
-    return <section className="workspace-content"><div className="workspace-heading"><div><h1>Study Plans</h1><p className="workspace-muted">Tell Cognita what you want to learn and build a plan around your goal.</p></div><button className="primary-button" onClick={() => session ? setShowPlanForm(true) : setShowAuthModal(true)}>New study plan</button></div>{studyPlans.length === 0 ? <div className="empty-workspace">Your first plan can turn a goal into clear weekly topics and practice.</div> : <div className="workspace-list">{studyPlans.map((plan) => <button className="workspace-list-item" key={plan.id} onClick={() => setSelectedPlan(plan)}><strong>{plan.title}</strong><span>{plan.subject} · {plan.learner_level}</span><small>{plan.status || 'active'} · {plan.study_plan_topics?.filter((topic) => topic.completed).length || 0} of {plan.study_plan_topics?.length || 0} topics complete</small></button>)}</div>}</section>
+    return <section className="workspace-content"><div className="workspace-heading"><div><h1>Study Plans</h1><p className="workspace-muted">Tell Cognita what you want to learn and build a plan around your goal.</p></div><button className="primary-button" onClick={() => session ? setShowPlanForm(true) : setShowAuthModal(true)}>New study plan</button></div>{studyPlans.length === 0 ? <div className="empty-workspace">Your first plan can turn a goal into clear weekly topics and practice.</div> : <div className="workspace-list">{studyPlans.map((plan) => { const topics = plan.study_plan_topics || []; const completed = topics.filter((topic) => topic.completed).length; const next = topics.find((topic) => !topic.completed)?.title || 'Complete'; return <button className="workspace-list-item" key={plan.id} onClick={() => setSelectedPlan(plan)}><strong>{plan.title}</strong><span>{plan.subject} · {plan.learner_level} · {topics.length ? Math.round((completed / topics.length) * 100) : 0}%</span><small>{plan.objective || 'Learning goal not set'} · Next: {next}</small></button> })}</div>}</section>
   }
 
   return (
@@ -1353,7 +1390,7 @@ export default function Page() {
           )}
         </div>}
       </main>
-      {showProjectForm && <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowProjectForm(false)}><form className="auth-modal workspace-form" onSubmit={createProject} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setShowProjectForm(false)} aria-label="Close">×</button><h2>New project</h2><input aria-label="Project title" placeholder="Project title" value={projectTitle} onChange={(event) => setProjectTitle(event.target.value)} required /><input aria-label="Subject" placeholder="Subject or topic" value={projectSubject} onChange={(event) => setProjectSubject(event.target.value)} /><textarea aria-label="Objective" placeholder="What do you want to achieve?" value={projectDescription} onChange={(event) => setProjectDescription(event.target.value)} /><button className="send-btn" type="submit">Create project</button></form></div>}
+      {showProjectForm && <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowProjectForm(false)}><form className="auth-modal workspace-form" onSubmit={createProject} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setShowProjectForm(false)} aria-label="Close">×</button><h2>New project</h2><input aria-label="Project title" placeholder="Project title" value={projectTitle} onChange={(event) => setProjectTitle(event.target.value)} required /><input aria-label="Subject" placeholder="Subject or topic" value={projectSubject} onChange={(event) => setProjectSubject(event.target.value)} /><textarea aria-label="Description" placeholder="Describe the project" value={projectDescription} onChange={(event) => setProjectDescription(event.target.value)} /><textarea aria-label="Goal" placeholder="What do you want to achieve?" value={projectGoal} onChange={(event) => setProjectGoal(event.target.value)} /><input aria-label="Deadline" type="date" value={projectDeadline} onChange={(event) => setProjectDeadline(event.target.value)} /><button className="send-btn" type="submit">Create project</button></form></div>}
       {showPlanForm && <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowPlanForm(false)}><form className="auth-modal workspace-form" onSubmit={createPlan} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setShowPlanForm(false)} aria-label="Close">×</button><h2>New study plan</h2><input aria-label="Plan title" placeholder="Plan title" value={planTitle} onChange={(event) => setPlanTitle(event.target.value)} required /><input aria-label="Plan subject" placeholder="Subject" value={planSubject} onChange={(event) => setPlanSubject(event.target.value)} required /><select aria-label="Learner level" value={planLevel} onChange={(event) => setPlanLevel(event.target.value)}><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option></select><textarea aria-label="Objective" placeholder="What should this plan help you achieve?" value={planObjective} onChange={(event) => setPlanObjective(event.target.value)} /><input aria-label="Available time" placeholder="Available time, e.g. 1 hour per day" value={planTime} onChange={(event) => setPlanTime(event.target.value)} /><input aria-label="Deadline" type="date" value={planDeadline} onChange={(event) => setPlanDeadline(event.target.value)} /><textarea aria-label="Topics" placeholder="Add one topic per line" value={planTopics} onChange={(event) => setPlanTopics(event.target.value)} required /><button className="send-btn" type="submit">Create study plan</button></form></div>}
       {showAuthModal && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowAuthModal(false)}>

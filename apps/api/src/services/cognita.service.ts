@@ -24,6 +24,7 @@ import knowledgeRouter from 'core/cortex-adapt/knowledgeRouter'
 import { isLowIntentConversational } from 'core/cortex-adapt/conversationalGuard'
 import { LUMORA_SYSTEM_PROMPT } from '../prompts/lumora.system.prompt'
 import { isInternalPromptLeak } from './prompt-output-guard'
+import { LearningContext, learningContextPrompt } from './learning-context.service'
 
 class CognitaService {
   ai = aiService
@@ -32,8 +33,8 @@ class CognitaService {
 
   // AI logic centralized in groq.service (askGroq handles prompts & memory)
 
-  async handleMessage(options: { userId?: string; message: string; conversationId?: string; mode?: string }) {
-    const { userId, message, conversationId, mode: providedMode } = options
+  async handleMessage(options: { userId?: string; message: string; conversationId?: string; mode?: string; learningContext?: LearningContext | null }) {
+    const { userId, message, conversationId, mode: providedMode, learningContext } = options
 
     // Map frontend mode to internal Mode
     const mapMode = (m?: string): Mode => {
@@ -60,6 +61,8 @@ class CognitaService {
     if (lowIntentConversational) {
       corePrompt.prompt = `${LUMORA_SYSTEM_PROMPT}\n\nFor this conversational message, respond naturally and concisely. Do not use numbered steps, formal sections, or teaching scaffolding unless the user asks for it.`
     }
+    const contextPrompt = learningContextPrompt(learningContext || null)
+    if (contextPrompt) corePrompt.prompt = `${contextPrompt}\n\n${corePrompt.prompt}`
 
     console.log('USER INPUT:', message)
     console.log('CORE PROMPT (base):', corePrompt.prompt)

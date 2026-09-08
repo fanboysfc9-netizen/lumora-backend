@@ -17,6 +17,11 @@ export function run() {
   assert(migration.includes('auth.uid() = user_id'), 'Project and plan policies must scope to auth.uid()')
   assert(migration.includes('where p.id = study_plan_id and p.user_id = auth.uid()'), 'Topic policy must inherit plan ownership')
   assert(migration.includes('project_id uuid references public.projects(id) on delete cascade'), 'Plans must retain project ownership relationship')
+  const lifecycle = fs.readFileSync(path.resolve(__dirname, '../../../../supabase/migrations/20260908000000_add_project_learning_lifecycle.sql'), 'utf8').toLowerCase()
+  assert(lifecycle.includes('add column if not exists goal'), 'Projects must persist a learning goal')
+  assert(lifecycle.includes('add column if not exists deadline'), 'Projects must persist an optional deadline')
+  assert(lifecycle.includes("status in ('active', 'completed', 'archived')"), 'Projects must have a constrained lifecycle')
+  assert(lifecycle.includes('progress_percent between 0 and 100'), 'Project progress must be bounded')
   console.log('[PASS] project and study-plan ownership contract')
 }
 

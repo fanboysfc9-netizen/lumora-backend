@@ -1,7 +1,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { VerifiedAuth } from './account.service'
 
-export type ProjectInput = { title: string; description?: string; subject?: string }
+export type ProjectInput = { title: string; description?: string; subject?: string; goal?: string; deadline?: string; status?: string }
 export type StudyPlanTopic = { week_number: number; title: string; lesson?: string; exercise?: string; sort_order?: number }
 export type StudyPlanInput = {
   title: string
@@ -13,6 +13,7 @@ export type StudyPlanInput = {
   available_time?: string
   deadline?: string
   project_id?: string
+  status?: string
   topics: StudyPlanTopic[]
 }
 
@@ -33,7 +34,7 @@ function requiredText(value: unknown, field: string) {
 }
 
 export async function listProjects(auth: VerifiedAuth) {
-  const { data, error } = await client(auth).from('projects').select('*').order('updated_at', { ascending: false })
+  const { data, error } = await client(auth).from('projects').select('*').eq('user_id', auth.userId).neq('status', 'archived').order('updated_at', { ascending: false })
   if (error) throw error
   return data || []
 }
@@ -43,20 +44,43 @@ export async function createProject(auth: VerifiedAuth, input: ProjectInput) {
     user_id: auth.userId,
     title: requiredText(input.title, 'title'),
     description: String(input.description || '').trim(),
-    subject: String(input.subject || '').trim()
+    subject: String(input.subject || '').trim(),
+    goal: String(input.goal || input.description || '').trim(),
+    deadline: input.deadline || null,
+    status: input.status || 'active'
   }).select('*').single()
   if (error) throw error
   return data
 }
 
+export async function updateProject(auth: VerifiedAuth, projectId: string, input: Partial<ProjectInput>) {
+  const patch: Record<string, unknown> = {}
+  if (input.title !== undefined) patch.title = requiredText(input.title, 'title')
+  if (input.description !== undefined) patch.description = String(input.description || '').trim()
+  if (input.subject !== undefined) patch.subject = String(input.subject || '').trim()
+  if (input.goal !== undefined) patch.goal = String(input.goal || '').trim()
+  if (input.deadline !== undefined) patch.deadline = input.deadline || null
+  if (input.status !== undefined) patch.status = input.status
+  const { data, error } = await client(auth).from('projects').update(patch).eq('id', projectId).eq('user_id', auth.userId).select('*').maybeSingle()
+  if (error) throw error
+  if (!data) throw new Error('project not found')
+  return data
+}
+
+export async function deleteProject(auth: VerifiedAuth, projectId: string) {
+  const { data, error } = await client(auth).from('projects').update({ status: 'archived' }).eq('id', projectId).eq('user_id', auth.userId).select('id').maybeSingle()
+  if (error) throw error
+  if (!data) throw new Error('project not found')
+}
+
 export async function getProject(auth: VerifiedAuth, projectId: string) {
-  const { data, error } = await client(auth).from('projects').select('*').eq('id', projectId).maybeSingle()
+  const { data, error } = await client(auth).from('projects').select('*').eq('id', projectId).eq('user_id', auth.userId).maybeSingle()
   if (error) throw error
   return data
 }
 
 export async function listStudyPlans(auth: VerifiedAuth) {
-  const { data, error } = await client(auth).from('study_plans').select('*,study_plan_topics(*)').order('updated_at', { ascending: false })
+  const { data, error } = await client(auth).from('study_plans').select('*,study_plan_topics(*)').eq('user_id', auth.userId).neq('status', 'archived').order('updated_at', { ascending: false })
   if (error) throw error
   return data || []
 }
@@ -105,29 +129,49 @@ export async function createStudyPlan(auth: VerifiedAuth, input: StudyPlanInput)
 }
 
 export async function getStudyPlan(auth: VerifiedAuth, planId: string) {
-  const { data, error } = await client(auth).from('study_plans').select('*,study_plan_topics(*)').eq('id', planId).maybeSingle()
+  const { data, error } = await client(auth).from('study_plans').select('*,study_plan_topics(*)').eq('id', planId).eq('user_id', auth.userId).maybeSingle()
   if (error) throw error
   return data
 }
 
+export async function updateStudyPlan(auth: VerifiedAuth, planId: string, input: Partial<StudyPlanInput>) {
+  const patch: Record<string, unknown> = {}
+  if (input.title !== undefined) patch.title = requiredText(input.title, 'title')
+  if (input.objective !== undefined) patch.objective = String(input.objective || '').trim()
+  if (input.subject !== undefined) patch.subject = requiredText(input.subject, 'subject')
+  if (input.learner_level !== undefined) patch.learner_level = String(input.learner_level || 'beginner').trim()
+  if (input.available_time !== undefined) patch.available_time = String(input.available_time || '').trim().slice(0, 80)
+  if (input.schedule !== undefined) patch.schedule = String(input.schedule || '').trim()
+  if (input.deadline !== undefined) patch.deadline = input.deadline || null
+  if (input.status !== undefined) patch.status = input.status
+  const { data, error } = await client(auth).from('study_plans').update(patch).eq('id', planId).eq('user_id', auth.userId).select('*').maybeSingle()
+  if (error) throw error
+  if (!data) throw new Error('study plan not found')
+  return getStudyPlan(auth, planId)
+}
+
 export async function completeStudyPlanTopic(auth: VerifiedAuth, topicId: string, completed: boolean) {
   const status = completed ? 'completed' : 'in_progress'
-  const { data, error } = await client(auth).from('study_plan_topics').update({ completed, status, completed_at: completed ? new Date().toISOString() : null }).eq('id', topicId).select('*').single()
+  const supabase = client(auth)
+  const { data: ownedTopic, error: ownedTopicError } = await supabase.from('study_plan_topics').select('id,study_plan_id,study_plans!inner(user_id)').eq('id', topicId).eq('study_plans.user_id', auth.userId).maybeSingle()
+  if (ownedTopicError) throw ownedTopicError
+  if (!ownedTopic) throw new Error('topic not found')
+  const { data, error } = await supabase.from('study_plan_topics').update({ completed, status, completed_at: completed ? new Date().toISOString() : null }).eq('id', topicId).select('*').single()
   if (error) throw error
-  const { data: topics, error: topicError } = await client(auth).from('study_plan_topics').select('completed,study_plan_id').eq('study_plan_id', data.study_plan_id)
+  const { data: topics, error: topicError } = await supabase.from('study_plan_topics').select('completed,study_plan_id').eq('study_plan_id', data.study_plan_id)
   if (topicError) throw topicError
   if (topics?.length && topics.every((topic) => topic.completed)) {
-    await client(auth).from('study_plans').update({ status: 'completed', updated_at: new Date().toISOString() }).eq('id', data.study_plan_id).eq('user_id', auth.userId)
+    await supabase.from('study_plans').update({ status: 'completed', updated_at: new Date().toISOString() }).eq('id', data.study_plan_id).eq('user_id', auth.userId)
   } else {
-    await client(auth).from('study_plans').update({ status: 'active', updated_at: new Date().toISOString() }).eq('id', data.study_plan_id).eq('user_id', auth.userId)
+    await supabase.from('study_plans').update({ status: 'active', updated_at: new Date().toISOString() }).eq('id', data.study_plan_id).eq('user_id', auth.userId)
   }
   return data
 }
 
 export async function deleteStudyPlan(auth: VerifiedAuth, planId: string) {
-  const { data, error } = await client(auth).from('study_plans').delete().eq('id', planId).eq('user_id', auth.userId).select('id').maybeSingle()
+  const { data, error } = await client(auth).from('study_plans').update({ status: 'archived', updated_at: new Date().toISOString() }).eq('id', planId).eq('user_id', auth.userId).select('id').maybeSingle()
   if (error) throw error
   if (!data) throw new Error('study plan not found')
 }
 
-export default { listProjects, createProject, getProject, listStudyPlans, createStudyPlan, getStudyPlan, completeStudyPlanTopic, deleteStudyPlan }
+export default { listProjects, createProject, updateProject, deleteProject, getProject, listStudyPlans, createStudyPlan, updateStudyPlan, getStudyPlan, completeStudyPlanTopic, deleteStudyPlan }
