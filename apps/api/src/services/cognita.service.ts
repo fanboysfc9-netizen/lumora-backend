@@ -25,6 +25,7 @@ import { isLowIntentConversational } from 'core/cortex-adapt/conversationalGuard
 import { LUMORA_SYSTEM_PROMPT } from '../prompts/lumora.system.prompt'
 import { isInternalPromptLeak } from './prompt-output-guard'
 import { LearningContext, learningContextPrompt } from './learning-context.service'
+import { adaptivePromptInstruction, buildAdaptiveLearningSignal, decideNale, updateAdaptiveVortex, NaleDecision } from 'core/cortex-adapt/adaptive-intelligence'
 
 class CognitaService {
   ai = aiService
@@ -73,6 +74,8 @@ class CognitaService {
     let approxDecision: any = null
     let approxPrediction: any = null
       let gstats: any = null
+    let observedBehavior: any = null
+    let adaptiveDecision: NaleDecision | null = null
     if (userId) try {
       const PROFILE_READ_TIMEOUT_MS = 60
       const pPromise = getOrCreateProfile(userId!)
@@ -88,6 +91,7 @@ class CognitaService {
           const CONV_READ_TIMEOUT_MS = 120
           const convPromise = analyzeConversation(userId!, conversationId, 8)
           const convBehavior: any = await Promise.race([convPromise, new Promise(res => setTimeout(() => res(null), CONV_READ_TIMEOUT_MS))])
+          observedBehavior = convBehavior
           if (convBehavior) {
             const convState = estimateCognitiveState(profile, convBehavior)
             const convDecision = decideAdaptation(profile, convState, { requestMode: 'default' })
@@ -164,11 +168,45 @@ class CognitaService {
       console.warn('[CognitaService] Cortex profile read/adapt failed (non-fatal):', (e as any)?.message || e)
     }
 
+    const activeSubject = learningContext?.project?.subject || learningContext?.studyPlan?.subject || null
+    const activeTopic = learningContext?.studyPlan?.currentTopic || null
+    const adaptiveSignal = buildAdaptiveLearningSignal({
+      subject: activeSubject,
+      topic: activeTopic,
+      behavior: observedBehavior,
+      projectProgress: learningContext?.project?.progressPercent,
+      studyPlanProgress: learningContext?.studyPlan?.progressPercent,
+      currentLearningItem: learningContext?.studyPlan?.currentTopic,
+      nextLearningItem: learningContext?.studyPlan?.nextTopic
+    })
+    const adaptiveVortex = updateAdaptiveVortex(adaptiveSignal)
+    adaptiveDecision = decideNale(adaptiveSignal, adaptiveVortex)
+    console.debug('[AdaptiveTrace]', JSON.stringify({
+      subject: adaptiveSignal.subject,
+      topic: adaptiveSignal.topic,
+      evidenceLevel: adaptiveSignal.evidenceLevel,
+      observations: adaptiveVortex.observations,
+      momentum: adaptiveVortex.momentum,
+      decision: adaptiveDecision.responseStrategy,
+      difficulty: adaptiveDecision.difficultyLevel
+    }))
+    if (adaptiveDecision.responseStrategy === 'misconception_focus' && approxDecision) {
+      approxDecision.simplificationIntensity = Math.max(approxDecision.simplificationIntensity || 0, 0.75)
+      approxDecision.exampleDensity = Math.max(approxDecision.exampleDensity || 0, 0.8)
+      approxDecision.pacing = 'slow'
+    } else if (adaptiveDecision.responseStrategy === 'extension' && approxDecision) {
+      approxDecision.challengeLevel = Math.max(approxDecision.challengeLevel || 0, 0.55)
+    }
+
     // Build messages for Groq: system gets the processed core prompt, user gets the user's message
     const messages = [
       { role: 'system', content: corePrompt.prompt },
       { role: 'user', content: message }
     ]
+    if (adaptiveDecision) {
+      corePrompt.prompt = `${corePrompt.prompt}\n\n${adaptivePromptInstruction(adaptiveDecision)}`
+      messages[0].content = corePrompt.prompt
+    }
 
     // Decide whether to use iterative (stepwise) generation to enable mid-response adaptation
     const needIterative = !!approxDecision && (

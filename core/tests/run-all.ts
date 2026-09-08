@@ -3,6 +3,7 @@ async function main() {
   try {
     const core = require('../lumora-core/tests/test-core')
     const adapt = require('../cortex-adapt/tests/test-adaptationEngine')
+    const adaptive = require('../cortex-adapt/tests/test-adaptive-intelligence')
     const feedback = require('../cortex-adapt/tests/test-feedbackLoop')
     const integration = require('./test-integration')
     const kr = require('../cortex-adapt/tests/test-knowledgeRouter')
@@ -10,6 +11,7 @@ async function main() {
 
     if (core && typeof core.run === 'function') core.run()
     if (adapt && typeof adapt.run === 'function') adapt.run()
+    if (adaptive && typeof adaptive.run === 'function') adaptive.run()
     if (kr && typeof kr.run === 'function') kr.run()
     if (refine && typeof refine.run === 'function') refine.run()
     if (integration && typeof integration.run === 'function') await integration.run()
