@@ -65,8 +65,6 @@ class CognitaService {
     const contextPrompt = learningContextPrompt(learningContext || null)
     if (contextPrompt) corePrompt.prompt = `${contextPrompt}\n\n${corePrompt.prompt}`
 
-    console.log('USER INPUT:', message)
-    console.log('CORE PROMPT (base):', corePrompt.prompt)
 
     // Attempt to fetch the user's learning profile quickly (non-blocking with timeout)
     let profile: any = null
@@ -103,10 +101,9 @@ class CognitaService {
             approxPrediction = await predictBeforeResponse(message, profile, convBehavior || undefined)
             if (approxPrediction) {
               approxDecision = adjustDecisionWithPrediction(approxDecision, approxPrediction)
-              console.log('[CognitaService] predictive pre-response:', approxPrediction)
             }
           } catch (pe) {
-            console.warn('[CognitaService] predictiveEngine failed (non-fatal):', (pe as any)?.message || pe)
+            console.warn('[CognitaService] predictiveEngine failed (non-fatal)')
           }
           // Consult global intelligence trends and nudge decision if needed
           try {
@@ -114,11 +111,11 @@ class CognitaService {
             approxDecision = adjustDecisionWithGlobalTrends(approxDecision, gstats)
             console.log('[CognitaService] global trends applied')
           } catch (ge) {
-            console.warn('[CognitaService] globalEngine failed (non-fatal):', (ge as any)?.message || ge)
+            console.warn('[CognitaService] globalEngine failed (non-fatal)')
           }
         } catch (e) {
           // if conversation analysis fails, continue with approxDecision
-          console.warn('[CognitaService] conversation analysis failed (non-fatal):', (e as any)?.message || e)
+          console.warn('[CognitaService] conversation analysis failed (non-fatal)')
         }
 
           // Decide whether to fetch external knowledge via SerpAPI
@@ -148,21 +145,19 @@ class CognitaService {
                     serpUsed = false
                   }
                 } catch (se) {
-                  console.warn('[CognitaService] SerpAPI fetch failed (non-fatal):', (se as any)?.message || se)
+                  console.warn('[CognitaService] SerpAPI fetch failed (non-fatal)')
                   serpSummaryObj = null
                 }
               }
             }
-            try { console.debug('SERPAPI_USED:', !!serpSummaryObj) } catch (e) {}
           } catch (ke) {
-            console.warn('[CognitaService] knowledgeRouter failed (non-fatal):', (ke as any)?.message || ke)
+            console.warn('[CognitaService] knowledgeRouter failed (non-fatal)')
           }
 
           const adaptationInstruction = toSystemInstruction(approxDecision, profile, approxPrediction, gstats)
         // Prepend subtle adaptation instruction and optional external knowledge to the system prompt (keeps it silent and compact)
         const externalBlock = knowledgeRouter.buildExternalKnowledgeSection(serpSummaryObj)
         corePrompt.prompt = `${adaptationInstruction}\n\n${externalBlock}${corePrompt.prompt}`
-        console.log('CORTEX ADAPT INSTRUCTION PREPENDED')
       }
     } catch (e) {
       console.warn('[CognitaService] Cortex profile read/adapt failed (non-fatal):', (e as any)?.message || e)
@@ -181,15 +176,6 @@ class CognitaService {
     })
     const adaptiveVortex = updateAdaptiveVortex(adaptiveSignal)
     adaptiveDecision = decideNale(adaptiveSignal, adaptiveVortex)
-    console.debug('[AdaptiveTrace]', JSON.stringify({
-      subject: adaptiveSignal.subject,
-      topic: adaptiveSignal.topic,
-      evidenceLevel: adaptiveSignal.evidenceLevel,
-      observations: adaptiveVortex.observations,
-      momentum: adaptiveVortex.momentum,
-      decision: adaptiveDecision.responseStrategy,
-      difficulty: adaptiveDecision.difficultyLevel
-    }))
     if (adaptiveDecision.responseStrategy === 'misconception_focus' && approxDecision) {
       approxDecision.simplificationIntensity = Math.max(approxDecision.simplificationIntensity || 0, 0.75)
       approxDecision.exampleDensity = Math.max(approxDecision.exampleDensity || 0, 0.8)
@@ -308,8 +294,6 @@ class CognitaService {
       aiResult = await this.ai.createChatCompletion(messages as any, { mode })
     }
 
-    console.log('GROQ RESPONSE:', aiResult?.raw || aiResult?.text || aiResult)
-
     if (!aiResult.success) {
       const diag: any = aiResult.diagnostic || {}
       const primaryDiag = diag.primary || diag
@@ -324,11 +308,11 @@ class CognitaService {
         envHasGroqKey: Boolean(primaryDiag?.context?.env?.hasGroqKey),
         message: primaryDiag?.message || 'No provider response returned.'
       }
-      console.error('[CognitaService] provider failure', JSON.stringify(debugSummary))
+      console.error('[CognitaService] provider failure', { classification })
 
       const msg = `Lumora could not generate a response because the AI provider failed. ${classification ? `Classification: ${classification}. ` : ''}${suggestedSteps.length ? `Next step: ${suggestedSteps[0]}` : 'Please try again in a moment.'}`
       const formatted = formatResponse(msg, mode)
-      return { mode, raw: aiResult.raw || null, text: '', formatted, diagnostic: debugSummary }
+      return { mode, text: '', formatted }
     }
 
     // Keep provider instructions private if a model echoes its system message.
@@ -340,7 +324,7 @@ class CognitaService {
       if (guardedResult.success && !isInternalPromptLeak(guardedResult.text || '')) {
         aiResult = guardedResult
       } else {
-        return { mode, raw: null, text: 'I could not produce a user-facing answer. Please try again.', formatted: formatResponse('I could not produce a user-facing answer. Please try again.', mode) }
+        return { mode, text: 'I could not produce a user-facing answer. Please try again.', formatted: formatResponse('I could not produce a user-facing answer. Please try again.', mode) }
       }
     }
 
@@ -348,7 +332,6 @@ class CognitaService {
     let post = lumoraCore.postProcess(aiResult.text || '')
     let finalText = lumoraCore.formatResponseAsText(post)
 
-    console.log('FINAL OUTPUT:', finalText)
 
     // If language mismatch detected by Core, attempt one regeneration with explicit English enforcement
     try {
@@ -368,13 +351,12 @@ class CognitaService {
           // replace aiResult raw/text for downstream logging and persistence
           aiResult.raw = regenResult.raw
           aiResult.text = regenResult.text
-          console.log('[CognitaService] regeneration successful — using English response')
         } else {
           console.warn('[CognitaService] regeneration failed; keeping original response')
         }
       }
     } catch (e) {
-      console.error('[CognitaService] error during regeneration attempt', (e as any)?.message || String(e))
+      console.error('[CognitaService] error during regeneration attempt')
     }
 
     const formatted = formatResponse(finalText || '', mode)
@@ -391,14 +373,13 @@ class CognitaService {
             modeUsed: mode,
             timestamp: Date.now()
           })
-          console.log('[Cortex] feedback loop processed (async)')
         } catch (e) {
-          console.error('[Cortex] feedback loop error (non-fatal):', (e as any)?.message || String(e))
+          console.error('[Cortex] feedback loop error (non-fatal)')
         }
       })()
     }
 
-    return { mode, raw: aiResult.raw, text: finalText, formatted }
+    return { mode, text: finalText, formatted }
   }
 }
 

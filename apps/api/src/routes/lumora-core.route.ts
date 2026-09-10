@@ -12,11 +12,11 @@ router.post('/', async (req: Request, res: Response) => {
     if (!message) return res.status(400).json({ error: 'message or question is required' })
 
     const coreInput: LumoraCoreInput = { question: message, userLevel: 'average', strictness: 'moderate' }
-    const prompt = lumoraCore.buildPrompt(coreInput)
-    return res.json({ ok: true, prompt: prompt.prompt, metadata: prompt.metadata })
+    lumoraCore.buildPrompt(coreInput)
+    return res.json({ ok: true, available: true })
   } catch (err: any) {
-    console.error('lumora-core.route error', err)
-    return res.status(500).json({ error: err?.message || 'internal error' })
+    console.error('lumora-core.route error', { name: err?.name || 'Error' })
+    return res.status(500).json({ error: 'Unable to prepare the learning response.' })
   }
 })
 

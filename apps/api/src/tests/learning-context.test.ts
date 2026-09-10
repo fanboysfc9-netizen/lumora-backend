@@ -26,6 +26,8 @@ export function run() {
   const planPrompt = learningContextPrompt(plan)
   assert(plan.studyPlan?.completedCount === 1, 'Completed topic count must be normalized')
   assert(plan.studyPlan?.currentTopic === 'Pythagoras', 'Current topic must be the first incomplete item')
+  assert(plan.studyPlan?.recommendedAction.includes('Pythagoras'), 'Study plan must provide a deterministic recommended action')
+  assert(plan.studyPlan?.deadlineStatus === 'none', 'Missing deadline must have no deadline status')
   assert(planPrompt.includes('Mathematics Revision'), 'Study-plan title must reach the AI context')
   assert(planPrompt.includes('Current topic: Pythagoras'), 'Current topic must reach the AI context')
   assert(planPrompt.includes('Progress: 1/3 items complete'), 'Study-plan progress must reach the AI context')

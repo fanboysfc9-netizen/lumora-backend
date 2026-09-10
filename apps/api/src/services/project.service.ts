@@ -1,7 +1,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { VerifiedAuth } from './account.service'
 
-export type ProjectInput = { title: string; description?: string; subject?: string; goal?: string; deadline?: string; status?: string }
+export type ProjectInput = { title: string; description?: string; subject?: string; goal?: string; deadline?: string; status?: string; progress_percent?: number }
 export type StudyPlanTopic = { week_number: number; title: string; lesson?: string; exercise?: string; sort_order?: number }
 export type StudyPlanInput = {
   title: string
@@ -33,6 +33,16 @@ function requiredText(value: unknown, field: string) {
   return text
 }
 
+function projectStatus(value: unknown) {
+  const status = String(value || 'active').trim().toLowerCase()
+  if (!['active', 'completed', 'archived'].includes(status)) throw new Error('project status is invalid')
+  return status
+}
+
+function progress(value: unknown) {
+  return Math.max(0, Math.min(100, Number(value) || 0))
+}
+
 export async function listProjects(auth: VerifiedAuth) {
   const { data, error } = await client(auth).from('projects').select('*').eq('user_id', auth.userId).neq('status', 'archived').order('updated_at', { ascending: false })
   if (error) throw error
@@ -47,7 +57,8 @@ export async function createProject(auth: VerifiedAuth, input: ProjectInput) {
     subject: String(input.subject || '').trim(),
     goal: String(input.goal || input.description || '').trim(),
     deadline: input.deadline || null,
-    status: input.status || 'active'
+    status: projectStatus(input.status),
+    progress_percent: progress(input.progress_percent)
   }).select('*').single()
   if (error) throw error
   return data
@@ -60,7 +71,8 @@ export async function updateProject(auth: VerifiedAuth, projectId: string, input
   if (input.subject !== undefined) patch.subject = String(input.subject || '').trim()
   if (input.goal !== undefined) patch.goal = String(input.goal || '').trim()
   if (input.deadline !== undefined) patch.deadline = input.deadline || null
-  if (input.status !== undefined) patch.status = input.status
+  if (input.status !== undefined) patch.status = projectStatus(input.status)
+  if (input.progress_percent !== undefined) patch.progress_percent = progress(input.progress_percent)
   const { data, error } = await client(auth).from('projects').update(patch).eq('id', projectId).eq('user_id', auth.userId).select('*').maybeSingle()
   if (error) throw error
   if (!data) throw new Error('project not found')

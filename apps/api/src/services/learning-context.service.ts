@@ -65,6 +65,8 @@ export type LearningContext = {
     nextTopic: string | null
     completedTopics: string[]
     upcomingTopics: string[]
+    recommendedAction: string
+    deadlineStatus: 'none' | 'upcoming' | 'overdue'
   }
 }
 
@@ -104,6 +106,10 @@ export function normalizeStudyPlanContext(plan: StudyPlanRecord): LearningContex
   const pending = topics.filter((topic) => !topic.completed)
   const current = pending[0] || null
   const totalCount = topics.length
+  const deadlineStatus = plan.deadline
+    ? (new Date(`${plan.deadline}T23:59:59Z`).getTime() < Date.now() ? 'overdue' : 'upcoming')
+    : 'none'
+  const recommendedAction = current ? `Study ${clean(current.title)}${plan.deadline ? ` before ${plan.deadline}` : ''}.` : 'Review your completed topics and choose a new learning goal.'
 
   return {
     kind: 'study_plan',
@@ -121,7 +127,9 @@ export function normalizeStudyPlanContext(plan: StudyPlanRecord): LearningContex
       currentTopic: current ? clean(current.title) : null,
       nextTopic: pending[1] ? clean(pending[1].title) : null,
       completedTopics: completed.map((topic) => clean(topic.title)),
-      upcomingTopics: pending.map((topic) => clean(topic.title))
+      upcomingTopics: pending.map((topic) => clean(topic.title)),
+      recommendedAction,
+      deadlineStatus
     }
   }
 }
@@ -152,6 +160,8 @@ export function learningContextPrompt(context: LearningContext | null): string {
     `Next topic: ${plan.nextTopic || 'none'}`,
     `Completed topics: ${plan.completedTopics.join(', ') || 'none'}`,
     `Upcoming topics: ${plan.upcomingTopics.join(', ') || 'none'}`,
+    `Recommended action: ${plan.recommendedAction}`,
+    `Deadline status: ${plan.deadlineStatus}`,
     plan.deadline ? `Deadline: ${plan.deadline}` : ''
   ].filter(Boolean).join('\n')
 }

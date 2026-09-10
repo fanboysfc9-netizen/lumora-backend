@@ -14,6 +14,7 @@ type PlanTopic = { id?: string; week_number: number; title: string; lesson?: str
 type StudyPlan = { id: string; title: string; objective: string; subject: string; learner_level: string; estimated_duration: string; schedule: string; available_time?: string; deadline?: string | null; status?: string; project_id?: string | null; study_plan_topics?: PlanTopic[] }
 type ProjectContext = { projectId?: string; projectName: string; subject?: string; studyPlanId?: string | null }
 type Conversation = { id: string; title: string; created_at: string; updated_at: string }
+type YouTubeVideo = { videoId: string; title: string; thumbnailUrl: string; channelTitle: string; publishedAt: string | null; watchUrl: string; embedUrl: string }
 
 type TutorName = 'Nira' | 'Elara' | 'Solara'
 
@@ -116,18 +117,29 @@ export default function Page() {
     try { return localStorage.getItem('lumora_theme') || 'light' } catch { return 'light' }
   })
   const [showStats, setShowStats] = useState(false)
-  const [workspaceView, setWorkspaceView] = useState<'chat' | 'projects' | 'plans'>('chat')
+  const [workspaceView, setWorkspaceView] = useState<'chat' | 'projects' | 'plans' | 'youtube'>('chat')
   const [projects, setProjects] = useState<Project[]>([])
   const [studyPlans, setStudyPlans] = useState<StudyPlan[]>([])
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
   const [selectedPlan, setSelectedPlan] = useState<StudyPlan | null>(null)
   const [showProjectForm, setShowProjectForm] = useState(false)
+  const [showProjectEditForm, setShowProjectEditForm] = useState(false)
   const [showPlanForm, setShowPlanForm] = useState(false)
   const [projectTitle, setProjectTitle] = useState('')
   const [projectDescription, setProjectDescription] = useState('')
   const [projectSubject, setProjectSubject] = useState('')
   const [projectGoal, setProjectGoal] = useState('')
   const [projectDeadline, setProjectDeadline] = useState('')
+  const [projectStatus, setProjectStatus] = useState('active')
+  const [projectProgress, setProjectProgress] = useState('0')
+  const [projectEditTitle, setProjectEditTitle] = useState('')
+  const [projectEditDescription, setProjectEditDescription] = useState('')
+  const [projectEditSubject, setProjectEditSubject] = useState('')
+  const [projectEditGoal, setProjectEditGoal] = useState('')
+  const [projectEditDeadline, setProjectEditDeadline] = useState('')
+  const [projectEditStatus, setProjectEditStatus] = useState('active')
+  const [projectEditProgress, setProjectEditProgress] = useState('0')
+  const [projectEditLoading, setProjectEditLoading] = useState(false)
   const [projectLoading, setProjectLoading] = useState(false)
   const [studyPlanLoading, setStudyPlanLoading] = useState(false)
   const [projectTab, setProjectTab] = useState<'overview' | 'chats' | 'study-plan' | 'resources' | 'progress' | 'files'>('overview')
@@ -141,6 +153,12 @@ export default function Page() {
   const [planDeadline, setPlanDeadline] = useState('')
   const [planProjectId, setPlanProjectId] = useState<string | undefined>(undefined)
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
+  const [youtubeQuery, setYoutubeQuery] = useState('')
+  const [youtubeVideos, setYoutubeVideos] = useState<YouTubeVideo[]>([])
+  const [selectedVideo, setSelectedVideo] = useState<YouTubeVideo | null>(null)
+  const [youtubePlayerError, setYoutubePlayerError] = useState(false)
+  const [youtubeLoading, setYoutubeLoading] = useState(false)
+  const [youtubeMessage, setYoutubeMessage] = useState<string | null>(null)
 
   const defaultStats = { totalMessages: 0, responses: 0, understood: 0, subjects: {} as Record<string, { messages: number; understood: number }> }
   const [stats, setStats] = useState(() => defaultStats)
@@ -790,17 +808,22 @@ export default function Page() {
       if (data?.ok) {
         if (requestSession && data.conversationId) {
           setConversationId(data.conversationId)
-          const conversationsResponse = await authenticatedFetch(`${API_URL!}/conversations`, requestSession)
-          const conversationsData = await conversationsResponse.json()
-          if (conversationsData?.ok && Array.isArray(conversationsData.conversations)) setConversations(conversationsData.conversations)
         }
-        const assistantText = data.text || (data.formatted && JSON.stringify(data.formatted)) || ''
+        const assistantText = typeof data.answer === 'string' ? data.answer : ''
         const assistantMsg: Msg = { role: 'assistant', text: assistantText, id: `a-${Date.now()}`, subject, mode: activeMode }
         setMessages((m) => [...m, assistantMsg])
         setMode(data.mode || activeMode || 'chat')
         const isEdu = isComplexResponse(assistantText) || activeMode === 'research'
         recordResponseReceived(assistantMsg.id!, subject, assistantText, isEdu)
         maybeAskUnderstandingCheck(assistantMsg, isEdu)
+        if (requestSession && data.conversationId) {
+          void authenticatedFetch(`${API_URL!}/conversations`, requestSession)
+            .then((conversationsResponse) => conversationsResponse.json())
+            .then((conversationsData) => {
+              if (conversationsData?.ok && Array.isArray(conversationsData.conversations)) setConversations(conversationsData.conversations)
+            })
+            .catch(() => undefined)
+        }
       } else {
         const assistantErr: Msg = { role: 'assistant', text: data?.error || 'Sorry, something went wrong.', id: `a-${Date.now()}`, subject, mode: activeMode }
         setMessages((m) => [...m, assistantErr])
@@ -978,8 +1001,9 @@ export default function Page() {
 
   async function createProject(event: React.FormEvent) {
     event.preventDefault()
-    const project = { id: `local-project-${Date.now()}`, title: projectTitle.trim(), description: projectDescription.trim(), subject: projectSubject.trim(), goal: projectGoal.trim(), deadline: projectDeadline || null }
-    if (!project.title) return
+    const project = { id: `local-project-${Date.now()}`, title: projectTitle.trim(), description: projectDescription.trim(), subject: projectSubject.trim(), goal: projectGoal.trim(), deadline: projectDeadline || null, status: projectStatus, progress_percent: Math.max(0, Math.min(100, Number(projectProgress) || 0)) }
+    if (!project.title || !projectSubject.trim() || !projectGoal.trim()) { setWorkspaceError('Project title, subject, and goal are required.'); return }
+    setProjectLoading(true)
     try {
       const next = [...projects, project]
       if (session) {
@@ -1000,8 +1024,8 @@ export default function Page() {
         setProjects(next)
         localStorage.setItem('lumora_anonymous_projects', JSON.stringify(next))
       }
-      setProjectTitle(''); setProjectDescription(''); setProjectSubject(''); setProjectGoal(''); setProjectDeadline(''); setShowProjectForm(false)
-    } catch (error) { setWorkspaceError(error instanceof Error ? error.message : 'Project could not be created') }
+      setProjectTitle(''); setProjectDescription(''); setProjectSubject(''); setProjectGoal(''); setProjectDeadline(''); setProjectStatus('active'); setProjectProgress('0'); setShowProjectForm(false)
+    } catch (error) { setWorkspaceError(error instanceof Error ? error.message : 'Project could not be created') } finally { setProjectLoading(false) }
   }
 
   async function archiveProject(project: Project) {
@@ -1016,22 +1040,40 @@ export default function Page() {
 
   async function updateProject(project: Project) {
     if (!session) return
-    const goal = window.prompt('Project goal', project.goal || project.description || '')
-    if (goal === null) return
+    setProjectEditTitle(project.title)
+    setProjectEditDescription(project.description || '')
+    setProjectEditSubject(project.subject || '')
+    setProjectEditGoal(project.goal || '')
+    setProjectEditDeadline(project.deadline || '')
+    setProjectEditStatus(project.status || 'active')
+    setProjectEditProgress(String(project.progress_percent || 0))
+    setShowProjectEditForm(true)
+  }
+
+  async function saveProjectEdit(event: React.FormEvent) {
+    event.preventDefault()
+    if (!session || !selectedProject) return
+    if (!projectEditTitle.trim() || !projectEditSubject.trim() || !projectEditGoal.trim()) {
+      setWorkspaceError('Project name, subject, and goal are required.')
+      return
+    }
+    setProjectEditLoading(true)
     try {
-      const response = await authenticatedFetch(`${buildWorkspaceApiUrl(API_URL, '/projects')}/${project.id}`, session, { method: 'PATCH', body: JSON.stringify({ goal }) })
+      const response = await authenticatedFetch(`${buildWorkspaceApiUrl(API_URL, '/projects')}/${selectedProject.id}`, session, { method: 'PATCH', body: JSON.stringify({ title: projectEditTitle.trim(), description: projectEditDescription.trim(), subject: projectEditSubject.trim(), goal: projectEditGoal.trim(), deadline: projectEditDeadline || null, status: projectEditStatus, progress_percent: Math.max(0, Math.min(100, Number(projectEditProgress) || 0)) }) })
       const data = await response.json()
       if (!response.ok) throw new Error(data?.error || 'Project could not be updated')
-      setProjects((items) => items.map((item) => item.id === project.id ? data.project : item))
-      setSelectedProject((item) => item?.id === project.id ? data.project : item)
-    } catch (error) { setWorkspaceError(error instanceof Error ? error.message : 'Project could not be updated') }
+      setProjects((items) => items.map((item) => item.id === selectedProject.id ? data.project : item))
+      setSelectedProject(data.project)
+      setShowProjectEditForm(false)
+    } catch (error) { setWorkspaceError(error instanceof Error ? error.message : 'Project could not be updated') } finally { setProjectEditLoading(false) }
   }
 
   async function createPlan(event: React.FormEvent) {
     event.preventDefault()
     const topics: PlanTopic[] = planTopics.split('\n').map((title, index) => title.trim()).filter(Boolean).map((title, index) => ({ id: `local-topic-${Date.now()}-${index}`, week_number: Math.floor(index / 3) + 1, title, lesson: `Study ${title}.`, exercise: `Explain or practise ${title}.`, completed: false, sort_order: index }))
-    if (!planTitle.trim() || !planSubject.trim() || !topics.length) return
+    if (!planTitle.trim() || !planSubject.trim() || !planObjective.trim() || !topics.length) { setWorkspaceError('Add a title, subject, learning goal, and at least one topic.'); return }
     const plan: StudyPlan = { id: `local-plan-${Date.now()}`, title: planTitle.trim(), objective: planObjective.trim(), subject: planSubject.trim(), learner_level: planLevel, estimated_duration: '', schedule: planTime, available_time: planTime, deadline: planDeadline || null, status: 'active', project_id: planProjectId, study_plan_topics: topics }
+    setStudyPlanLoading(true)
     try {
       if (session) {
         const response = await authenticatedFetch(buildWorkspaceApiUrl(API_URL, '/study-plans'), session, { method: 'POST', body: JSON.stringify({ ...plan, topics, available_time: planTime, deadline: planDeadline || null }) })
@@ -1057,7 +1099,7 @@ export default function Page() {
         localStorage.setItem('lumora_anonymous_study_plans', JSON.stringify(next))
       }
       setPlanTitle(''); setPlanObjective(''); setPlanSubject(''); setPlanTopics(''); setPlanTime(''); setPlanDeadline(''); setPlanProjectId(undefined); setShowPlanForm(false)
-    } catch (error) { setWorkspaceError(error instanceof Error ? error.message : 'Study plan could not be created') }
+    } catch (error) { setWorkspaceError(error instanceof Error ? error.message : 'Study plan could not be created') } finally { setStudyPlanLoading(false) }
   }
 
   async function toggleTopic(plan: StudyPlan, topic: PlanTopic) {
@@ -1073,6 +1115,29 @@ export default function Page() {
       setSelectedPlan(update(plan))
       if (!session) localStorage.setItem('lumora_anonymous_study_plans', JSON.stringify(next))
     } catch (error) { setWorkspaceError(error instanceof Error ? error.message : 'Topic could not be updated') }
+  }
+
+  async function searchLearningVideos(event?: React.FormEvent) {
+    event?.preventDefault()
+    const query = youtubeQuery.trim() || activeProjectContext?.subject || subject
+    if (!query) return
+    setYoutubeLoading(true)
+    setYoutubeMessage(null)
+    try {
+      const requestSession = session ? (await refreshSession()) || session : null
+      const response = requestSession
+        ? await authenticatedFetch(buildWorkspaceApiUrl(API_URL, '/youtube/search'), requestSession, { method: 'POST', body: JSON.stringify({ query, projectContext: activeProjectContext ? { projectId: activeProjectContext.projectId, studyPlanId: activeProjectContext.studyPlanId } : undefined }) })
+        : await fetch(buildWorkspaceApiUrl(API_URL, '/youtube/search'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query }) })
+      const data = await response.json()
+      if (!response.ok || !data?.ok) throw new Error(data?.error || 'Video search is unavailable')
+      setYoutubeVideos(Array.isArray(data.videos) ? data.videos : [])
+      setYoutubeMessage(data.enabled === false ? 'Video search is not configured yet.' : data.videos?.length ? null : 'No relevant videos found. Try a more specific topic.')
+    } catch (error) {
+      setYoutubeVideos([])
+      setYoutubeMessage(error instanceof Error ? error.message : 'Video search is unavailable')
+    } finally {
+      setYoutubeLoading(false)
+    }
   }
 
   async function archiveStudyPlan(plan: StudyPlan) {
@@ -1122,6 +1187,7 @@ export default function Page() {
               <button className="text-button" onClick={() => updateProject(selectedProject)}>Edit goal</button>
               <button className="text-button" onClick={() => archiveProject(selectedProject)}>Archive</button>
             </div>
+            <div className="plan-progress">Progress: {Math.round(selectedProject.progress_percent || 0)}%</div>
           </div>
           <div className="project-overview-card">
             <h2>Current status</h2>
@@ -1163,7 +1229,9 @@ export default function Page() {
       const completed = topics.filter((topic) => topic.completed).length
       const completion = topics.length ? Math.round((completed / topics.length) * 100) : 0
       const groupedWeeks = Array.from(new Set(topics.map((topic) => topic.week_number))).sort((a, b) => a - b)
-      return <section className="workspace-content"><button className="back-link" onClick={() => setSelectedPlan(null)}>Study Plans</button><h1>{selectedPlan.title}</h1><p className="workspace-muted">{selectedPlan.objective || `Learn ${selectedPlan.subject}.`}</p><div className="plan-summary-grid"><div className="plan-summary-item"><span>Subject</span><strong>{selectedPlan.subject || 'Unspecified'}</strong></div><div className="plan-summary-item"><span>Level</span><strong>{selectedPlan.learner_level || 'Beginner'}</strong></div><div className="plan-summary-item"><span>Time</span><strong>{selectedPlan.available_time || selectedPlan.schedule || 'Flexible'}</strong></div><div className="plan-summary-item"><span>Deadline</span><strong>{selectedPlan.deadline || 'Optional'}</strong></div></div><div className="plan-progress">Progress: {completion}% ({completed}/{topics.length || 0} complete)</div><div className="project-action-row"><button className="primary-button" onClick={() => { setActiveProjectContext({ projectId: selectedPlan.project_id || undefined, projectName: selectedPlan.title, subject: selectedPlan.subject, studyPlanId: selectedPlan.id }); setWorkspaceView('chat'); setInput(`Continue my study plan: ${topics.find((topic) => !topic.completed)?.title || selectedPlan.subject}`) }}>Continue current topic</button><button className="text-button" onClick={() => archiveStudyPlan(selectedPlan)}>Archive plan</button></div>{groupedWeeks.map((week) => <div className="plan-week" key={week}><h2>Week {week}</h2>{topics.filter((topic) => topic.week_number === week).map((topic) => <label className="plan-topic" key={topic.id || `${topic.title}-${week}`}><input type="checkbox" checked={topic.completed} onChange={() => toggleTopic(selectedPlan, topic)} /><span><strong>{topic.title}</strong><small>{topic.lesson || 'Keep practising this topic.'}</small></span></label>)}</div>)}</section>
+      const nextTopic = topics.find((topic) => !topic.completed)?.title
+      const deadlineStatus = selectedPlan.deadline ? (new Date(`${selectedPlan.deadline}T23:59:59`).getTime() < Date.now() ? 'Overdue' : 'On track') : 'No deadline'
+      return <section className="workspace-content"><button className="back-link" onClick={() => setSelectedPlan(null)}>Study Plans</button><h1>{selectedPlan.title}</h1><p className="workspace-muted">{selectedPlan.objective || `Learn ${selectedPlan.subject}.`}</p><div className="plan-summary-grid"><div className="plan-summary-item"><span>Subject</span><strong>{selectedPlan.subject || 'Unspecified'}</strong></div><div className="plan-summary-item"><span>Level</span><strong>{selectedPlan.learner_level || 'Beginner'}</strong></div><div className="plan-summary-item"><span>Time</span><strong>{selectedPlan.available_time || selectedPlan.schedule || 'Flexible'}</strong></div><div className="plan-summary-item"><span>Deadline</span><strong>{selectedPlan.deadline || 'Optional'}</strong></div></div><div className="plan-progress">Progress: {completion}% ({completed}/{topics.length || 0} complete) · {deadlineStatus}</div><div className="workspace-section"><strong>Recommended next action</strong><p className="workspace-muted">{nextTopic ? `Study ${nextTopic}${selectedPlan.deadline ? ` before ${selectedPlan.deadline}` : ''}.` : 'Review what you have completed and choose a new goal.'}</p></div><div className="project-action-row"><button className="primary-button" onClick={() => { setActiveProjectContext({ projectId: selectedPlan.project_id || undefined, projectName: selectedPlan.title, subject: selectedPlan.subject, studyPlanId: selectedPlan.id }); setWorkspaceView('chat'); setInput(`Continue my study plan: ${nextTopic || selectedPlan.subject}`) }}>Continue current topic</button><button className="text-button" onClick={() => archiveStudyPlan(selectedPlan)}>Archive plan</button></div>{groupedWeeks.map((week) => <div className="plan-week" key={week}><h2>Week {week}</h2>{topics.filter((topic) => topic.week_number === week).map((topic) => <label className="plan-topic" key={topic.id || `${topic.title}-${week}`}><input type="checkbox" checked={topic.completed} onChange={() => toggleTopic(selectedPlan, topic)} /><span><strong>{topic.title}</strong><small>{topic.lesson || 'Keep practising this topic.'}</small></span></label>)}</div>)}</section>
     }
 
     if (studyPlanLoading) {
@@ -1171,6 +1239,19 @@ export default function Page() {
     }
 
     return <section className="workspace-content"><div className="workspace-heading"><div><h1>Study Plans</h1><p className="workspace-muted">Tell Cognita what you want to learn and build a plan around your goal.</p></div><button className="primary-button" onClick={() => session ? setShowPlanForm(true) : setShowAuthModal(true)}>New study plan</button></div>{studyPlans.length === 0 ? <div className="empty-workspace">Your first plan can turn a goal into clear weekly topics and practice.</div> : <div className="workspace-list">{studyPlans.map((plan) => { const topics = plan.study_plan_topics || []; const completed = topics.filter((topic) => topic.completed).length; const next = topics.find((topic) => !topic.completed)?.title || 'Complete'; return <button className="workspace-list-item" key={plan.id} onClick={() => setSelectedPlan(plan)}><strong>{plan.title}</strong><span>{plan.subject} · {plan.learner_level} · {topics.length ? Math.round((completed / topics.length) * 100) : 0}%</span><small>{plan.objective || 'Learning goal not set'} · Next: {next}</small></button> })}</div>}</section>
+  }
+
+  function renderYouTubeView() {
+    return <section className="workspace-content">
+      <div className="workspace-heading"><div><h1>Learn with video</h1><p className="workspace-muted">Find focused lessons for a topic, project, or study plan.</p></div></div>
+      <form className="workspace-search-form" onSubmit={searchLearningVideos}>
+        <label htmlFor="youtube-query">Topic</label>
+        <div className="workspace-search-row"><input id="youtube-query" value={youtubeQuery} onChange={(event) => setYoutubeQuery(event.target.value)} placeholder={activeProjectContext?.subject || subject || 'Python functions'} /><button className="primary-button" type="submit" disabled={youtubeLoading}>{youtubeLoading ? 'Searching…' : 'Find videos'}</button></div>
+      </form>
+      {youtubeMessage && <p className="workspace-muted" role="status">{youtubeMessage}</p>}
+      {selectedVideo && <div className="video-player-panel"><div className="video-frame">{youtubePlayerError ? <div className="video-player-fallback"><strong>This video cannot play here.</strong><a href={selectedVideo.watchUrl} target="_blank" rel="noreferrer">Open it on YouTube</a></div> : <iframe title={selectedVideo.title} onError={() => setYoutubePlayerError(true)} src={`${selectedVideo.embedUrl}?origin=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin : '')}`} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen />}</div><div className="video-player-caption"><strong>{selectedVideo.title}</strong><span>{selectedVideo.channelTitle}</span>{!youtubePlayerError && <a href={selectedVideo.watchUrl} target="_blank" rel="noreferrer">Open on YouTube</a>}</div></div>}
+      {youtubeVideos.length > 0 && <div className="video-results-grid">{youtubeVideos.map((video) => <article className={`video-result-card ${selectedVideo?.videoId === video.videoId ? 'is-selected' : ''}`} key={video.videoId}><button className="video-thumbnail-button" type="button" onClick={() => { setSelectedVideo(video); setYoutubePlayerError(false) }}><img src={video.thumbnailUrl} alt="" loading="lazy" /><span className="video-play-label">Watch</span></button><div className="video-result-copy"><h2>{video.title}</h2><p>{video.channelTitle}</p><a href={video.watchUrl} target="_blank" rel="noreferrer">Open on YouTube</a></div></article>)}</div>}
+    </section>
   }
 
   return (
@@ -1216,7 +1297,7 @@ export default function Page() {
           <button className="nav-item nav-icon-item" disabled><Icon name="spark" /> <span>Practice</span></button>
           <button className="nav-item nav-icon-item" disabled><Icon name="spark" /> <span>Simulations</span></button>
           <div className="nav-section-label">Resources</div>
-          <button className="nav-item nav-icon-item" disabled><Icon name="book" /> <span>YouTube</span></button>
+          <button className="nav-item nav-icon-item" onClick={() => { setWorkspaceView('youtube'); setMobileNavOpen(false) }}><Icon name="book" /> <span>YouTube</span></button>
           <button className="nav-item nav-icon-item" disabled><Icon name="book" /> <span>Wikipedia</span></button>
           <button className="nav-item nav-icon-item" disabled><Icon name="folder" /> <span>Saved Resources</span></button>
           <button className="nav-item nav-icon-item" disabled><Icon name="folder" /> <span>Files</span></button>
@@ -1245,7 +1326,7 @@ export default function Page() {
       </aside>
       {mobileNavOpen && <button className="sidebar-backdrop" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />}
       <main className="main" style={{ width: '100%' }}>
-        {workspaceView !== 'chat' ? <div className="workspace-panel-shell"><button className="mobile-workspace-back" onClick={() => setWorkspaceView('chat')} aria-label="Back to chat"><Icon name="arrow-left" /> <span>Back to chat</span></button>{workspaceError && <div className="workspace-error" role="alert">{workspaceError}</div>}{workspaceView === 'projects' ? renderProjectView() : renderPlanView()}</div> : <div className="chat-container" style={{ width: '100%' }}>
+        {workspaceView !== 'chat' ? <div className="workspace-panel-shell"><button className="mobile-workspace-back" onClick={() => setWorkspaceView('chat')} aria-label="Back to chat"><Icon name="arrow-left" /> <span>Back to chat</span></button>{workspaceError && <div className="workspace-error" role="alert">{workspaceError}</div>}{workspaceView === 'projects' ? renderProjectView() : workspaceView === 'plans' ? renderPlanView() : renderYouTubeView()}</div> : <div className="chat-container" style={{ width: '100%' }}>
           <div className="chat-area">
             <div className="chat-header">
               <div className="chat-header-left">
@@ -1390,8 +1471,9 @@ export default function Page() {
           )}
         </div>}
       </main>
-      {showProjectForm && <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowProjectForm(false)}><form className="auth-modal workspace-form" onSubmit={createProject} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setShowProjectForm(false)} aria-label="Close">×</button><h2>New project</h2><input aria-label="Project title" placeholder="Project title" value={projectTitle} onChange={(event) => setProjectTitle(event.target.value)} required /><input aria-label="Subject" placeholder="Subject or topic" value={projectSubject} onChange={(event) => setProjectSubject(event.target.value)} /><textarea aria-label="Description" placeholder="Describe the project" value={projectDescription} onChange={(event) => setProjectDescription(event.target.value)} /><textarea aria-label="Goal" placeholder="What do you want to achieve?" value={projectGoal} onChange={(event) => setProjectGoal(event.target.value)} /><input aria-label="Deadline" type="date" value={projectDeadline} onChange={(event) => setProjectDeadline(event.target.value)} /><button className="send-btn" type="submit">Create project</button></form></div>}
-      {showPlanForm && <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowPlanForm(false)}><form className="auth-modal workspace-form" onSubmit={createPlan} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setShowPlanForm(false)} aria-label="Close">×</button><h2>New study plan</h2><input aria-label="Plan title" placeholder="Plan title" value={planTitle} onChange={(event) => setPlanTitle(event.target.value)} required /><input aria-label="Plan subject" placeholder="Subject" value={planSubject} onChange={(event) => setPlanSubject(event.target.value)} required /><select aria-label="Learner level" value={planLevel} onChange={(event) => setPlanLevel(event.target.value)}><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option></select><textarea aria-label="Objective" placeholder="What should this plan help you achieve?" value={planObjective} onChange={(event) => setPlanObjective(event.target.value)} /><input aria-label="Available time" placeholder="Available time, e.g. 1 hour per day" value={planTime} onChange={(event) => setPlanTime(event.target.value)} /><input aria-label="Deadline" type="date" value={planDeadline} onChange={(event) => setPlanDeadline(event.target.value)} /><textarea aria-label="Topics" placeholder="Add one topic per line" value={planTopics} onChange={(event) => setPlanTopics(event.target.value)} required /><button className="send-btn" type="submit">Create study plan</button></form></div>}
+      {showProjectEditForm && <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowProjectEditForm(false)}><form className="auth-modal workspace-form" onSubmit={saveProjectEdit} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setShowProjectEditForm(false)} aria-label="Close">×</button><h2>Edit project</h2><label>Project name<input value={projectEditTitle} onChange={(event) => setProjectEditTitle(event.target.value)} required /></label><label>Subject<input value={projectEditSubject} onChange={(event) => setProjectEditSubject(event.target.value)} required /></label><label>Goal<textarea value={projectEditGoal} onChange={(event) => setProjectEditGoal(event.target.value)} required /></label><label>Details<textarea value={projectEditDescription} onChange={(event) => setProjectEditDescription(event.target.value)} /></label><div className="form-two-column"><label>Deadline<input type="date" value={projectEditDeadline} onChange={(event) => setProjectEditDeadline(event.target.value)} /></label><label>Status<select value={projectEditStatus} onChange={(event) => setProjectEditStatus(event.target.value)}><option value="active">Active</option><option value="completed">Completed</option></select></label></div><label>Progress (%)<input type="number" min="0" max="100" value={projectEditProgress} onChange={(event) => setProjectEditProgress(event.target.value)} /></label><button className="send-btn" type="submit" disabled={projectEditLoading}>{projectEditLoading ? 'Saving…' : 'Save project'}</button></form></div>}
+      {showProjectForm && <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowProjectForm(false)}><form className="auth-modal workspace-form" onSubmit={createProject} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setShowProjectForm(false)} aria-label="Close">×</button><h2>New project</h2><p className="workspace-muted">Define the outcome first. Cognita will use this context while you work.</p><label>Project name<input aria-label="Project title" placeholder="e.g. Build a Python calculator" value={projectTitle} onChange={(event) => setProjectTitle(event.target.value)} required /></label><label>Subject<input aria-label="Subject" placeholder="e.g. Computer science" value={projectSubject} onChange={(event) => setProjectSubject(event.target.value)} required /></label><label>Goal<textarea aria-label="Goal" placeholder="What should you be able to do?" value={projectGoal} onChange={(event) => setProjectGoal(event.target.value)} required /></label><label>Details<textarea aria-label="Description" placeholder="Optional project notes" value={projectDescription} onChange={(event) => setProjectDescription(event.target.value)} /></label><div className="form-two-column"><label>Deadline<input aria-label="Deadline" type="date" value={projectDeadline} onChange={(event) => setProjectDeadline(event.target.value)} /></label><label>Status<select aria-label="Status" value={projectStatus} onChange={(event) => setProjectStatus(event.target.value)}><option value="active">Active</option><option value="completed">Completed</option></select></label></div><label>Progress (%)<input aria-label="Progress" type="number" min="0" max="100" value={projectProgress} onChange={(event) => setProjectProgress(event.target.value)} /></label><button className="send-btn" type="submit" disabled={projectLoading}>{projectLoading ? 'Creating…' : 'Create project'}</button></form></div>}
+      {showPlanForm && <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowPlanForm(false)}><form className="auth-modal workspace-form" onSubmit={createPlan} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="modal-close" onClick={() => setShowPlanForm(false)} aria-label="Close">×</button><h2>New study plan</h2><p className="workspace-muted">Turn a goal into a short sequence of topics you can continue with Cognita.</p><label>Plan name<input aria-label="Plan title" placeholder="e.g. Algebra foundations" value={planTitle} onChange={(event) => setPlanTitle(event.target.value)} required /></label><label>Subject<input aria-label="Plan subject" placeholder="e.g. Mathematics" value={planSubject} onChange={(event) => setPlanSubject(event.target.value)} required /></label><label>Learning goal<textarea aria-label="Objective" placeholder="What should this plan help you achieve?" value={planObjective} onChange={(event) => setPlanObjective(event.target.value)} required /></label><div className="form-two-column"><label>Level<select aria-label="Learner level" value={planLevel} onChange={(event) => setPlanLevel(event.target.value)}><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option></select></label><label>Deadline<input aria-label="Deadline" type="date" value={planDeadline} onChange={(event) => setPlanDeadline(event.target.value)} /></label></div><label>Available study time<input aria-label="Available time" placeholder="e.g. 30 minutes per day" value={planTime} onChange={(event) => setPlanTime(event.target.value)} /></label><label>Topics <span className="field-help">One topic per line, in study order.</span><textarea aria-label="Topics" placeholder="Linear equations&#10;Graphing&#10;Word problems" value={planTopics} onChange={(event) => setPlanTopics(event.target.value)} required /></label><button className="send-btn" type="submit" disabled={studyPlanLoading}>{studyPlanLoading ? 'Creating…' : 'Create study plan'}</button></form></div>}
       {showAuthModal && (
         <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowAuthModal(false)}>
           <form className="auth-modal" onSubmit={handleSignIn} onMouseDown={(event) => event.stopPropagation()}>

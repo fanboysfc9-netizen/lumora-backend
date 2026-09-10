@@ -7,20 +7,50 @@ import { resolveLearningContext } from '../services/learning-context.service'
 
 const router = Router()
 
+const timingEnabled = process.env.DEBUG_TIMING === 'true'
+function logTiming(stage: string, startedAt: number) {
+  if (timingEnabled) console.debug('[chat.timing]', { stage, elapsedMs: Math.round(performance.now() - startedAt) })
+}
+
+type PublicChatResponse = {
+  ok: true
+  answer: string
+  conversationId?: string
+  mode: string
+}
+
+function toPublicChatResponse(result: { text?: unknown; mode?: unknown }, conversationId?: string): PublicChatResponse {
+  return {
+    ok: true,
+    answer: typeof result.text === 'string' ? result.text : '',
+    ...(conversationId ? { conversationId } : {}),
+    mode: typeof result.mode === 'string' ? result.mode : 'standard'
+  }
+}
+
 router.post('/', createOptionalSupabaseAuthMiddleware(), async (req: Request, res: Response) => {
+  const requestStartedAt = performance.now()
   try {
     const { message, conversationId } = req.body
     const userId = req.auth?.userId
     if (!message) return res.status(400).json({ error: 'message is required' })
     const bodyMode = req.body?.mode as string | undefined
     const mappedMode = mapClientMode(bodyMode)
+    const contextStartedAt = performance.now()
     const learningContext = userId
       ? await resolveLearningContext({ userId, accessToken: req.auth!.accessToken }, req.body?.learningContext || req.body?.projectContext)
       : null
+    logTiming('learning_context', contextStartedAt)
 
+    const modelStartedAt = performance.now()
     const result = await cognitaService.handleMessage({ userId, message, conversationId, mode: mappedMode, learningContext })
-    if (!userId) return res.json({ ok: true, ...result })
+    logTiming('model_and_adaptation', modelStartedAt)
+    if (!userId) {
+      logTiming('response', requestStartedAt)
+      return res.json(toPublicChatResponse(result))
+    }
 
+    const persistenceStartedAt = performance.now()
     const persistedConversationId = await supabaseChatService.persistExchange(
       { userId, accessToken: req.auth!.accessToken },
       conversationId,
@@ -29,10 +59,12 @@ router.post('/', createOptionalSupabaseAuthMiddleware(), async (req: Request, re
         { role: 'assistant', content: result.text || '', mode: mappedMode }
       ]
     )
-    return res.json({ ok: true, conversationId: persistedConversationId, ...result })
+    logTiming('persistence', persistenceStartedAt)
+    logTiming('response', requestStartedAt)
+    return res.json(toPublicChatResponse(result, persistedConversationId))
   } catch (err: any) {
-    console.error('chat.route error', err)
-    return res.status(500).json({ error: err?.message || 'internal error' })
+    console.error('chat.route error', { name: err?.name || 'Error' })
+    return res.status(500).json({ error: 'Something went wrong while preparing your response. Please try again.' })
   }
 })
 

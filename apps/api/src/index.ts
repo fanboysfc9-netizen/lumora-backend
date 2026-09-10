@@ -11,6 +11,7 @@ import adminRouter from './routes/admin.route'
 import accountRouter from './routes/account.route'
 import projectsRouter from './routes/projects.route'
 import studyPlansRouter from './routes/study-plans.route'
+import youtubeRouter from './routes/youtube.route'
 
 // Fail fast if required env missing (do this before starting the server)
 if (!process.env.GROQ_API_KEY) {
@@ -42,6 +43,7 @@ app.use('/api/admin', adminRouter)
 app.use('/api/account', accountRouter)
 app.use('/api/projects', projectsRouter)
 app.use('/api/study-plans', studyPlansRouter)
+app.use('/api/youtube', youtubeRouter)
 
 app.get('/', (_req, res) => res.json({ ok: true, service: 'Lumora Cognita Backend' }))
 app.get('/health', (_req, res) => res.status(200).json({
