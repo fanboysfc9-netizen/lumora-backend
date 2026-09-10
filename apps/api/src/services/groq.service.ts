@@ -249,9 +249,7 @@ class GroqService {
 
   async createVisionCompletion(imageDataUrl: string, question: string, options?: { mode?: string }) {
     await this.ensureModelsLoaded()
-    const configured = process.env.LUMORA_VISION_MODEL?.trim() || 'meta-llama/llama-4-scout-17b-16e-instruct'
-    const candidates = [configured, 'meta-llama/llama-4-maverick-17b-128e-instruct']
-    const model = candidates.find((candidate) => this.availableModels.length === 0 || this.availableModels.includes(candidate)) || configured
+    const model = process.env.LUMORA_VISION_MODEL?.trim() || 'qwen/qwen3.6-27b'
     try {
       const result = await this.client.chat.completions.create({
         model,
@@ -263,7 +261,14 @@ class GroqService {
         ]
       })
       return { success: true, text: result.choices?.[0]?.message?.content || '' }
-    } catch {
+    } catch (error: any) {
+      const providerMessage = String(error?.message || '').toLowerCase()
+      const category = /404|not found|model|decommissioned|deprecated/.test(providerMessage)
+        ? 'vision_model_unavailable'
+        : /image|content|format|invalid|unsupported/.test(providerMessage)
+          ? 'vision_request_invalid'
+          : 'vision_provider_error'
+      console.warn('[GroqService] vision request failed', { category })
       return { success: false, text: '' }
     }
   }
