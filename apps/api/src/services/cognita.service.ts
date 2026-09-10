@@ -26,6 +26,7 @@ import { LUMORA_SYSTEM_PROMPT } from '../prompts/lumora.system.prompt'
 import { isInternalPromptLeak } from './prompt-output-guard'
 import { LearningContext, learningContextPrompt } from './learning-context.service'
 import { adaptivePromptInstruction, buildAdaptiveLearningSignal, decideNale, updateAdaptiveVortex, NaleDecision } from 'core/cortex-adapt/adaptive-intelligence'
+import { NormalizedMultimodalInput, attachmentSummary } from './multimodal.service'
 
 class CognitaService {
   ai = aiService
@@ -380,6 +381,20 @@ class CognitaService {
     }
 
     return { mode, text: finalText, formatted }
+  }
+
+  async handleMultimodalMessage(options: { userId?: string; message?: string; conversationId?: string; mode?: string; learningContext?: LearningContext | null; attachment: NormalizedMultimodalInput }) {
+    const { attachment, message = '' } = options
+    let attachmentContext = ''
+    if (attachment.type === 'image') {
+      const vision = await this.ai.createVisionCompletion(attachment.imageDataUrl || '', message, { mode: options.mode })
+      if (!vision.success || !vision.text.trim()) throw new Error('The image could not be analyzed right now.')
+      attachmentContext = `\n\n${attachmentSummary(attachment)}\nImage understanding:\n${vision.text.slice(0, 12000)}`
+    } else {
+      attachmentContext = `\n\n${attachmentSummary(attachment)}\nDocument text:\n${attachment.extractedText || ''}`
+    }
+    const userMessage = `${message.trim() || 'Help me understand this attachment.'}${attachmentContext}`
+    return this.handleMessage({ ...options, message: userMessage })
   }
 }
 

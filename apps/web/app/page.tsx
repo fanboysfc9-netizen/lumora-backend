@@ -15,6 +15,7 @@ type StudyPlan = { id: string; title: string; objective: string; subject: string
 type ProjectContext = { projectId?: string; projectName: string; subject?: string; studyPlanId?: string | null }
 type Conversation = { id: string; title: string; created_at: string; updated_at: string }
 type YouTubeVideo = { videoId: string; title: string; thumbnailUrl: string; channelTitle: string; publishedAt: string | null; watchUrl: string; embedUrl: string }
+type PendingAttachment = { file: File; previewUrl: string | null; kind: 'image' | 'document' }
 
 type TutorName = 'Nira' | 'Elara' | 'Solara'
 
@@ -159,6 +160,9 @@ export default function Page() {
   const [youtubePlayerError, setYoutubePlayerError] = useState(false)
   const [youtubeLoading, setYoutubeLoading] = useState(false)
   const [youtubeMessage, setYoutubeMessage] = useState<string | null>(null)
+  const [pendingAttachment, setPendingAttachment] = useState<PendingAttachment | null>(null)
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false)
+  const [attachmentError, setAttachmentError] = useState<string | null>(null)
 
   const defaultStats = { totalMessages: 0, responses: 0, understood: 0, subjects: {} as Record<string, { messages: number; understood: number }> }
   const [stats, setStats] = useState(() => defaultStats)
@@ -176,6 +180,9 @@ export default function Page() {
   const [isRecording, setIsRecording] = useState(false)
   const lastMessageRef = useRef<HTMLDivElement | null>(null)
   const recognitionRef = useRef<any>(null)
+  const cameraInputRef = useRef<HTMLInputElement | null>(null)
+  const imageInputRef = useRef<HTMLInputElement | null>(null)
+  const documentInputRef = useRef<HTMLInputElement | null>(null)
   const [micState, setMicState] = useState<'idle'|'listening'|'processing'|'error'>('idle')
   const [micError, setMicError] = useState<string | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -740,10 +747,27 @@ export default function Page() {
     return <div>{nodes}</div>
   }
 
+  function selectAttachment(file: File | undefined) {
+    if (!file) return
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf', 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
+    if (!allowed.includes(file.type)) { setAttachmentError("That file type isn't supported."); return }
+    if (file.size > 15 * 1024 * 1024) { setAttachmentError('That file is too large to process.'); return }
+    if (pendingAttachment?.previewUrl) URL.revokeObjectURL(pendingAttachment.previewUrl)
+    setAttachmentError(null)
+    setAttachmentMenuOpen(false)
+    setPendingAttachment({ file, kind: file.type.startsWith('image/') ? 'image' : 'document', previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : null })
+  }
+
+  function removeAttachment() {
+    if (pendingAttachment?.previewUrl) URL.revokeObjectURL(pendingAttachment.previewUrl)
+    setPendingAttachment(null)
+    setAttachmentError(null)
+  }
+
   async function handleSend() {
     if (authLoading) return
     const text = input.trim()
-    if (!text) return
+    if (!text && !pendingAttachment) return
     const norm = text.toLowerCase().trim()
     const blockedPos = ['i understood', 'i understand', 'understood', 'got it', 'i got it']
     const blockedNeg = ["i didn't understand", 'i didnt understand', "didn't understand", 'didnt understand', "i don't understand", 'i do not understand', 'did not understand']
@@ -754,11 +778,12 @@ export default function Page() {
     if (isThinking) return
 
     setInput('')
-    const userMsg: Msg = { role: 'user', text, id: `u-${Date.now()}`, subject, mode: activeMode }
+    const displayText = text || `Attachment: ${pendingAttachment?.file.name || 'uploaded file'}`
+    const userMsg: Msg = { role: 'user', text: displayText, id: `u-${Date.now()}`, subject, mode: activeMode }
     setMessages((m) => [...m, userMsg])
     try { setStats((s) => { const ns = { ...s, totalMessages: s.totalMessages + 1 }; const key = userScopedStorageKey('lumora_stats', session?.user.id); if (key) localStorage.setItem(key, JSON.stringify(ns)); return ns }) } catch {}
 
-    const local = interceptSpecialQuestions(text)
+    const local = pendingAttachment ? null : interceptSpecialQuestions(text)
     if (local) {
       const assistantLocal: Msg = { role: 'assistant', text: local, id: `a-local-${Date.now()}`, subject, mode: activeMode }
       setMessages((m) => [...m, assistantLocal])
@@ -768,7 +793,7 @@ export default function Page() {
       return
     }
 
-    const learningMatch = text.match(/(?:want to learn|learn|study)\s+([a-z0-9+#.-]+)/i)
+    const learningMatch = pendingAttachment ? null : text.match(/(?:want to learn|learn|study)\s+([a-z0-9+#.-]+)/i)
     if (learningMatch) {
       const topic = learningMatch[1]
       const assistantMsg: Msg = { role: 'assistant', text: `Let's set up a learning project for ${topic}. Add a goal and a few topics when you are ready.`, id: `a-project-${Date.now()}`, subject: topic, mode: activeMode }
@@ -792,16 +817,13 @@ export default function Page() {
         subject: requestSubject,
         studyPlanId: activeProjectContext.studyPlanId || null
       } : undefined
+      const attachment = pendingAttachment
+      const isMultimodal = Boolean(attachment)
+      const endpoint = isMultimodal ? `${API_URL!}/multimodal` : API_URL!
+      const body = isMultimodal ? (() => { const form = new FormData(); form.append('attachment', attachment!.file); form.append('message', text); form.append('conversationId', conversationId || ''); form.append('mode', activeMode); form.append('projectContext', JSON.stringify(projectContextPayload || {})); return form })() : JSON.stringify({ message: text, conversationId, mode: activeMode, subject: requestSubject, skill: computeSkillForSubject(requestSubject), projectContext: projectContextPayload })
       const res = requestSession
-        ? await authenticatedFetch(API_URL!, requestSession, {
-        method: 'POST',
-        body: JSON.stringify({ message: text, conversationId, mode: activeMode, subject: requestSubject, skill: computeSkillForSubject(requestSubject), projectContext: projectContextPayload })
-      })
-        : await fetch(API_URL!, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text, mode: activeMode, subject: requestSubject, skill: computeSkillForSubject(requestSubject), projectContext: projectContextPayload })
-        })
+        ? await authenticatedFetch(endpoint, requestSession, { method: 'POST', body })
+        : await fetch(endpoint, { method: 'POST', ...(isMultimodal ? {} : { headers: { 'Content-Type': 'application/json' } }), body })
       const data = await res.json()
       try { markTiming('responseReceived') } catch (e) {}
       try { sendVoiceMetrics({ textLength: text.length, subject, mode: activeMode }) } catch (e) {}
@@ -828,6 +850,7 @@ export default function Page() {
         const assistantErr: Msg = { role: 'assistant', text: data?.error || 'Sorry, something went wrong.', id: `a-${Date.now()}`, subject, mode: activeMode }
         setMessages((m) => [...m, assistantErr])
       }
+      if (attachment) removeAttachment()
     } catch (err) {
       console.error(err)
       setMessages((m) => [...m, { role: 'assistant', text: err instanceof ApiAuthenticationError ? err.message : err instanceof AuthenticationRequiredError ? err.message : 'I could not reach Cognita. Please try again.' }])
@@ -1398,6 +1421,15 @@ export default function Page() {
             </div>
 
             <div className="chat-input">
+              {pendingAttachment && <div className="attachment-preview" role="status">{pendingAttachment.previewUrl ? <img src={pendingAttachment.previewUrl} alt="Attachment preview" /> : <span className="attachment-file-icon" aria-hidden="true">FILE</span>}<span className="attachment-details"><strong>{pendingAttachment.file.name}</strong><small>{Math.ceil(pendingAttachment.file.size / 1024)} KB</small></span><button type="button" className="attachment-remove" onClick={removeAttachment} aria-label="Remove attachment">×</button></div>}
+              {attachmentError && <div className="attachment-error" role="alert">{attachmentError}</div>}
+              <div className="attachment-picker">
+                <button type="button" className="attachment-button" onClick={() => setAttachmentMenuOpen((open) => !open)} aria-label="Add attachment" aria-expanded={attachmentMenuOpen}><Icon name="paperclip" /></button>
+                {attachmentMenuOpen && <div className="attachment-menu" role="menu"><button type="button" onClick={() => cameraInputRef.current?.click()} role="menuitem">Take photo</button><button type="button" onClick={() => imageInputRef.current?.click()} role="menuitem">Choose image</button><button type="button" onClick={() => documentInputRef.current?.click()} role="menuitem">Upload file</button></div>}
+                <input ref={cameraInputRef} className="sr-only" type="file" accept="image/*" capture="environment" onChange={(event) => selectAttachment(event.target.files?.[0])} />
+                <input ref={imageInputRef} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => selectAttachment(event.target.files?.[0])} />
+                <input ref={documentInputRef} className="sr-only" type="file" accept="application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => selectAttachment(event.target.files?.[0])} />
+              </div>
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -1430,11 +1462,11 @@ export default function Page() {
 
               <button
                 onClick={handleSend}
-                disabled={isThinking || !input.trim()}
+                disabled={isThinking || (!input.trim() && !pendingAttachment)}
                 className={`send-btn ${isThinking ? '' : 'pulse'}`}
-                aria-disabled={isThinking || !input.trim()}
+                aria-disabled={isThinking || (!input.trim() && !pendingAttachment)}
               >
-                {isThinking ? 'Sending...' : 'Send'}
+                {isThinking ? (pendingAttachment ? 'Analyzing...' : 'Sending...') : 'Send'}
               </button>
             </div>
           </div>

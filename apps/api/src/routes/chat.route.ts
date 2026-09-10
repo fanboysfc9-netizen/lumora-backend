@@ -4,8 +4,11 @@ import authenticateSupabaseRequest, { createOptionalSupabaseAuthMiddleware } fro
 import supabaseChatService from '../services/supabase-chat.service'
 import { mapClientMode } from '../services/chat-mode'
 import { resolveLearningContext } from '../services/learning-context.service'
+import multer from 'multer'
+import { normalizeUpload } from '../services/multimodal.service'
 
 const router = Router()
+const upload = multer({ storage: multer.memoryStorage(), limits: { files: 1, fileSize: 15 * 1024 * 1024 } })
 
 const timingEnabled = process.env.DEBUG_TIMING === 'true'
 function logTiming(stage: string, startedAt: number) {
@@ -37,8 +40,9 @@ router.post('/', createOptionalSupabaseAuthMiddleware(), async (req: Request, re
     const bodyMode = req.body?.mode as string | undefined
     const mappedMode = mapClientMode(bodyMode)
     const contextStartedAt = performance.now()
+    const submittedContext = typeof req.body?.projectContext === 'string' ? JSON.parse(req.body.projectContext || '{}') : req.body?.projectContext
     const learningContext = userId
-      ? await resolveLearningContext({ userId, accessToken: req.auth!.accessToken }, req.body?.learningContext || req.body?.projectContext)
+      ? await resolveLearningContext({ userId, accessToken: req.auth!.accessToken }, req.body?.learningContext || submittedContext)
       : null
     logTiming('learning_context', contextStartedAt)
 
@@ -65,6 +69,48 @@ router.post('/', createOptionalSupabaseAuthMiddleware(), async (req: Request, re
   } catch (err: any) {
     console.error('chat.route error', { name: err?.name || 'Error' })
     return res.status(500).json({ error: 'Something went wrong while preparing your response. Please try again.' })
+  }
+})
+
+router.post('/multimodal', createOptionalSupabaseAuthMiddleware(), (req, res, next) => {
+  upload.single('attachment')(req, res, (error) => {
+    if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'That file is too large to process.' })
+    if (error) return res.status(400).json({ error: 'That attachment could not be uploaded.' })
+    next()
+  })
+}, async (req: Request, res: Response) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Please choose an attachment first.' })
+    const attachment = await normalizeUpload(req.file)
+    const userId = req.auth?.userId
+    const mappedMode = mapClientMode(req.body?.mode as string | undefined)
+    const submittedContext = typeof req.body?.projectContext === 'string' ? JSON.parse(req.body.projectContext || '{}') : req.body?.projectContext
+    const learningContext = userId
+      ? await resolveLearningContext({ userId, accessToken: req.auth!.accessToken }, req.body?.learningContext || submittedContext)
+      : null
+    const result = await cognitaService.handleMultimodalMessage({
+      userId,
+      message: typeof req.body?.message === 'string' ? req.body.message.slice(0, 4000) : '',
+      conversationId: typeof req.body?.conversationId === 'string' ? req.body.conversationId : undefined,
+      mode: mappedMode,
+      learningContext,
+      attachment
+    })
+    if (!userId) return res.json(toPublicChatResponse(result))
+    const persistedConversationId = await supabaseChatService.persistExchange(
+      { userId, accessToken: req.auth!.accessToken },
+      req.body?.conversationId,
+      [
+        { role: 'user', content: `${attachment.filename}${req.body?.message ? `: ${String(req.body.message).slice(0, 4000)}` : ''}`, mode: mappedMode },
+        { role: 'assistant', content: result.text || '', mode: mappedMode }
+      ]
+    )
+    return res.json(toPublicChatResponse(result, persistedConversationId))
+  } catch (error: any) {
+    const message = error?.message === 'That file type is not supported.' || error?.message === 'That file is too large to process.' || error?.message === 'That document does not contain readable text.' || error?.message === 'That image could not be read.' || error?.message === 'The image could not be analyzed right now.'
+      ? error.message
+      : 'Something went wrong while analyzing that attachment. Please try again.'
+    return res.status(400).json({ error: message })
   }
 })
 

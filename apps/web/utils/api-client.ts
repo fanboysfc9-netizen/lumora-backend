@@ -27,7 +27,7 @@ export async function authenticatedFetch(
 
   const headers = new Headers(init.headers)
   headers.set('Authorization', `Bearer ${requestSession.access_token}`)
-  if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
+  if (init.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
 
   const response = await fetch(url, { ...init, headers })
   if (response.status === 401 && supabase) {

@@ -26,6 +26,7 @@ npm run dev
 API endpoints:
 
 - `POST /api/chat` — authenticated body: `{ message, conversationId? }` — sends message to Cognita
+- `POST /api/chat/multimodal` — multipart `attachment` plus optional `message`; supports images, PDF, TXT, and DOCX
 - `GET /api/chat/history?conversationId=...` — authenticated conversation history
 - `GET /api/account` — authenticated account, subscription, entitlement, and usage state
 - `GET /api/account/subscription` — authenticated subscription state
