@@ -168,6 +168,7 @@ export default function Page() {
   const [stats, setStats] = useState(() => defaultStats)
   const [messages, setMessages] = useState<Msg[]>([])
   const [conversationId, setConversationId] = useState<string | null>(null)
+  const chatRequestInFlightRef = useRef(false)
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [conversationSearch, setConversationSearch] = useState('')
   const [input, setInput] = useState('')
@@ -309,9 +310,9 @@ export default function Page() {
       try {
         const res = await authenticatedFetch(`${API_URL!}/history`, session)
         const data = await res.json()
-        if (data?.ok && Array.isArray(data.history)) {
+        if (data?.ok && Array.isArray(data.history) && !chatRequestInFlightRef.current) {
           setConversationId(data.conversationId || null)
-          setMessages(data.history.map((m: any) => ({ role: m.role, text: m.text })))
+          setMessages(data.history.map((m: any, index: number) => ({ role: m.role, text: m.text, id: `h-${data.conversationId || 'latest'}-${index}` })))
         }
       } catch (err) {
         console.warn('failed to load history', err)
@@ -319,10 +320,10 @@ export default function Page() {
 
       const pre = prefill
       if (pre) {
-        setInput(decodeURIComponent(pre))
+        const decodedPrefill = decodeURIComponent(pre)
+        setInput(decodedPrefill)
         setTimeout(() => {
-          setInput(decodeURIComponent(pre))
-          handleSend()
+          handleSend(decodedPrefill)
         }, 250)
       }
     }
@@ -688,8 +689,24 @@ export default function Page() {
     while (i < lines.length) {
       const raw = lines[i]
       const line = raw.trim()
+      if (/^```/.test(line)) {
+        const codeLines: string[] = []
+        i++
+        while (i < lines.length && !/^```/.test(lines[i].trim())) {
+          codeLines.push(lines[i])
+          i++
+        }
+        if (i < lines.length) i++
+        nodes.push(<pre key={`code-${i}`}><code>{codeLines.join('\n')}</code></pre>)
+        continue
+      }
       if (line === '') {
-        nodes.push(<div key={`br-${i}`} style={{ height: 8 }} />)
+        nodes.push(<div key={`br-${i}`} className="message-break" />)
+        i++
+        continue
+      }
+      if (/^#{1,3}\s+/.test(line) || (/^[A-Z][^.!?]{2,60}:$/.test(line) && !/^(Step|Example)\s+\d/i.test(line))) {
+        nodes.push(<h3 key={`h-${i}`}>{line.replace(/^#{1,3}\s+/, '').replace(/:$/, '')}</h3>)
         i++
         continue
       }
@@ -764,9 +781,9 @@ export default function Page() {
     setAttachmentError(null)
   }
 
-  async function handleSend() {
+  async function handleSend(overrideText?: string) {
     if (authLoading) return
-    const text = input.trim()
+    const text = (overrideText ?? input).trim()
     if (!text && !pendingAttachment) return
     const norm = text.toLowerCase().trim()
     const blockedPos = ['i understood', 'i understand', 'understood', 'got it', 'i got it']
@@ -778,31 +795,35 @@ export default function Page() {
     if (isThinking) return
 
     setInput('')
+    chatRequestInFlightRef.current = true
     const displayText = text || `Attachment: ${pendingAttachment?.file.name || 'uploaded file'}`
-    const userMsg: Msg = { role: 'user', text: displayText, id: `u-${Date.now()}`, subject, mode: activeMode }
+    const messageStamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const userMsg: Msg = { role: 'user', text: displayText, id: `u-${messageStamp}`, subject, mode: activeMode }
     setMessages((m) => [...m, userMsg])
     try { setStats((s) => { const ns = { ...s, totalMessages: s.totalMessages + 1 }; const key = userScopedStorageKey('lumora_stats', session?.user.id); if (key) localStorage.setItem(key, JSON.stringify(ns)); return ns }) } catch {}
 
     const local = pendingAttachment ? null : interceptSpecialQuestions(text)
     if (local) {
-      const assistantLocal: Msg = { role: 'assistant', text: local, id: `a-local-${Date.now()}`, subject, mode: activeMode }
+      const assistantLocal: Msg = { role: 'assistant', text: local, id: `a-local-${messageStamp}`, subject, mode: activeMode }
       setMessages((m) => [...m, assistantLocal])
       const isEduLocal = isComplexResponse(assistantLocal.text) || activeMode === 'research'
       recordResponseReceived(assistantLocal.id!, subject, assistantLocal.text, isEduLocal)
       maybeAskUnderstandingCheck(assistantLocal, isEduLocal)
+      chatRequestInFlightRef.current = false
       return
     }
 
     const learningMatch = pendingAttachment ? null : text.match(/(?:want to learn|learn|study)\s+([a-z0-9+#.-]+)/i)
     if (learningMatch) {
       const topic = learningMatch[1]
-      const assistantMsg: Msg = { role: 'assistant', text: `Let's set up a learning project for ${topic}. Add a goal and a few topics when you are ready.`, id: `a-project-${Date.now()}`, subject: topic, mode: activeMode }
+      const assistantMsg: Msg = { role: 'assistant', text: `Let's set up a learning project for ${topic}. Add a goal and a few topics when you are ready.`, id: `a-project-${messageStamp}`, subject: topic, mode: activeMode }
       setMessages((m) => [...m, assistantMsg])
       setProjectTitle(`Learn ${topic.charAt(0).toUpperCase() + topic.slice(1)}`)
       setProjectSubject(topic)
       setProjectDescription(`Build confidence with ${topic}.`)
       setWorkspaceView('projects')
       setShowProjectForm(true)
+      chatRequestInFlightRef.current = false
       return
     }
 
@@ -832,7 +853,7 @@ export default function Page() {
           setConversationId(data.conversationId)
         }
         const assistantText = typeof data.answer === 'string' ? data.answer : ''
-        const assistantMsg: Msg = { role: 'assistant', text: assistantText, id: `a-${Date.now()}`, subject, mode: activeMode }
+        const assistantMsg: Msg = { role: 'assistant', text: assistantText, id: `a-${messageStamp}`, subject, mode: activeMode }
         setMessages((m) => [...m, assistantMsg])
         setMode(data.mode || activeMode || 'chat')
         const isEdu = isComplexResponse(assistantText) || activeMode === 'research'
@@ -847,7 +868,7 @@ export default function Page() {
             .catch(() => undefined)
         }
       } else {
-        const assistantErr: Msg = { role: 'assistant', text: data?.error || 'Sorry, something went wrong.', id: `a-${Date.now()}`, subject, mode: activeMode }
+        const assistantErr: Msg = { role: 'assistant', text: data?.error || 'Sorry, something went wrong.', id: `a-${messageStamp}`, subject, mode: activeMode }
         setMessages((m) => [...m, assistantErr])
       }
       if (attachment) removeAttachment()
@@ -856,6 +877,7 @@ export default function Page() {
       setMessages((m) => [...m, { role: 'assistant', text: err instanceof ApiAuthenticationError ? err.message : err instanceof AuthenticationRequiredError ? err.message : 'I could not reach Cognita. Please try again.' }])
     } finally {
       setIsThinking(false)
+      chatRequestInFlightRef.current = false
     }
   }
 
@@ -1388,10 +1410,10 @@ export default function Page() {
                   <div className="welcome-title">{greeting}</div>
                   <div className="welcome-sub">What is on your mind?</div>
                   <div className="welcome-actions">
-                    <button className="action-btn" onClick={() => { setInput('Explain a concept'); setTimeout(() => handleSend(), 100) }}>Explain a concept</button>
-                    <button className="action-btn" onClick={() => { setInput('Help me study'); setTimeout(() => handleSend(), 100) }}>Help me study</button>
-                    <button className="action-btn" onClick={() => { setInput('Build a learning plan'); setTimeout(() => handleSend(), 100) }}>Build a learning plan</button>
-                    <button className="action-btn" onClick={() => { setInput('Analyze a document'); setTimeout(() => handleSend(), 100) }}>Analyze a document</button>
+                    <button className="action-btn" onClick={() => handleSend('Explain a concept')}>Explain a concept</button>
+                    <button className="action-btn" onClick={() => handleSend('Help me study')}>Help me study</button>
+                    <button className="action-btn" onClick={() => handleSend('Build a learning plan')}>Build a learning plan</button>
+                    <button className="action-btn" onClick={() => handleSend('Analyze a document')}>Analyze a document</button>
                   </div>
                 </div>
               </div>
@@ -1461,7 +1483,7 @@ export default function Page() {
               </div>
 
               <button
-                onClick={handleSend}
+                onClick={() => handleSend()}
                 disabled={isThinking || (!input.trim() && !pendingAttachment)}
                 className={`send-btn ${isThinking ? '' : 'pulse'}`}
                 aria-disabled={isThinking || (!input.trim() && !pendingAttachment)}
