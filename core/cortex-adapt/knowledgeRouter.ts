@@ -63,15 +63,17 @@ function setCachedSummary(q: string, summary: SerpSummary) {
 const TIME_KEYWORDS = /\b(latest|today|current|now|recent|this week|this month|breaking|update)\b/i
 const NEWS_KEYWORDS = /\b(news|breaking|alert|update|headline)\b/i
 const SPORTS_KEYWORDS = /\b(score|vs\b|beat|lost|won|result|final|match)\b/i
-const PERSON_LOOKUP = /\b(who is|who was|tell me about|biography|born|died)\b/i
-const MATH_KEYWORDS = /\b(calculate|solve|integral|derivative|sum|add|subtract|multiply|divide|what is)\b/i
+const PERSON_LOOKUP = /\b(who\s*(?:is|was|['’]?s)|whos|tell me about|biography|born|died)\b/i
+const ENTITY_LOOKUP = /\b(?:who|what)\s*(?:is|are|was|were|['’]?s)?\s+["“”']?[a-z][a-z0-9.-]{1,12}["“”']?\??$/i
+const SHORT_ALIAS_LOOKUP = /\b(?:who\s*(?:is|['’]?s)?|whos|what\s*(?:is|['’]?s)?)\s+["“”']?[a-z]{1,4}\d{0,3}["“”']?\??$/i
+const MATH_KEYWORDS = /\b(calculate|solve|integral|derivative|sum|add|subtract|multiply|divide)\b/i
 const TECH_KEYWORDS = /\b(how to|implement|setup|configure|example|code|library|framework)\b/i
 const PRICE_KEYWORDS = /\b(price|cost|rate|how much|worth|value)\b/i
 const DEFINITION_KEYWORDS = /\b(define|definition|meaning of|what is)\b/i
 
 function classifyIntent(input: string): KnowledgeIntent {
   const t = input || ''
-  if (PERSON_LOOKUP.test(t)) return 'person_lookup'
+  if (PERSON_LOOKUP.test(t) || SHORT_ALIAS_LOOKUP.test(t)) return 'person_lookup'
   if (NEWS_KEYWORDS.test(t) || /\b(breaking|headline|news)\b/i.test(t)) return 'news_event'
   if (TIME_KEYWORDS.test(t)) return 'real_time_info'
   if (SPORTS_KEYWORDS.test(t)) return 'real_time_info'
@@ -91,7 +93,7 @@ function computeConfidence(input: string): number {
   if (TIME_KEYWORDS.test(s)) score = Math.min(score, 0.45)
 
   // person lookups on unknown entities will be lower (heuristic)
-  if (PERSON_LOOKUP.test(s)) score = Math.min(score, 0.3)
+  if (PERSON_LOOKUP.test(s) || SHORT_ALIAS_LOOKUP.test(s) || ENTITY_LOOKUP.test(s)) score = Math.min(score, 0.3)
 
   return clamp(score)
 }
@@ -104,7 +106,9 @@ function computeWebScore(input: string, intent: KnowledgeIntent, confidence: num
   if (SPORTS_KEYWORDS.test(s)) webScore += 0.6
   if (PRICE_KEYWORDS.test(s)) webScore += 0.7
   if (DEFINITION_KEYWORDS.test(s)) webScore += 0.35
-  if (intent === 'person_lookup') webScore += 0.4
+  if (intent === 'person_lookup') webScore += 0.55
+  if (SHORT_ALIAS_LOOKUP.test(s)) webScore += 0.65
+  if (ENTITY_LOOKUP.test(s) && !TECH_KEYWORDS.test(s)) webScore += 0.45
   if (confidence < 0.5) webScore += 0.5
   return clamp(webScore)
 }
@@ -223,6 +227,8 @@ export async function routeQuery(userInput: string): Promise<KnowledgeDecision> 
   if (NEWS_KEYWORDS.test(userInput)) reasons.push('news-related keywords')
   if (SPORTS_KEYWORDS.test(userInput)) reasons.push('sports-related keywords')
   if (PERSON_LOOKUP.test(userInput)) reasons.push('person lookup detected')
+  if (SHORT_ALIAS_LOOKUP.test(userInput)) reasons.push('short alias lookup detected')
+  if (ENTITY_LOOKUP.test(userInput)) reasons.push('ambiguous entity lookup')
   if (confidenceScore < 0.5) reasons.push('low local confidence')
 
   return {

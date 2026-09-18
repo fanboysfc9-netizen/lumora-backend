@@ -118,7 +118,7 @@ export default function Page() {
     try { return localStorage.getItem('lumora_theme') || 'light' } catch { return 'light' }
   })
   const [showStats, setShowStats] = useState(false)
-  const [workspaceView, setWorkspaceView] = useState<'chat' | 'projects' | 'plans' | 'youtube'>('chat')
+  const [workspaceView, setWorkspaceView] = useState<'chat' | 'projects' | 'plans' | 'youtube' | 'homework'>('chat')
   const [projects, setProjects] = useState<Project[]>([])
   const [studyPlans, setStudyPlans] = useState<StudyPlan[]>([])
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
@@ -163,6 +163,8 @@ export default function Page() {
   const [pendingAttachment, setPendingAttachment] = useState<PendingAttachment | null>(null)
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false)
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
+  const [homeworkType, setHomeworkType] = useState('Explain and guide')
+  const [homeworkPrompt, setHomeworkPrompt] = useState('')
 
   const defaultStats = { totalMessages: 0, responses: 0, understood: 0, subjects: {} as Record<string, { messages: number; understood: number }> }
   const [stats, setStats] = useState(() => defaultStats)
@@ -685,6 +687,16 @@ export default function Page() {
     if (!text) return null
     const lines = text.replace(/\r/g, '').split('\n')
     const nodes: React.ReactNode[] = []
+    const renderInlineText = (value: string) => {
+      const parts = value.split(/(\*\*[^*]+\*\*)/g)
+      return parts.map((part, idx) => {
+        const match = part.match(/^\*\*([^*]+)\*\*$/)
+        return match ? <strong key={idx}>{match[1]}</strong> : part
+      })
+    }
+    const isTableRow = (value: string) => /^\s*\|.+\|\s*$/.test(value)
+    const splitTableRow = (value: string) => value.trim().replace(/^\||\|$/g, '').split('|').map((cell) => cell.trim())
+    const isTableDivider = (value: string) => splitTableRow(value).every((cell) => /^:?-{3,}:?$/.test(cell))
     let i = 0
     while (i < lines.length) {
       const raw = lines[i]
@@ -705,8 +717,34 @@ export default function Page() {
         i++
         continue
       }
+      if (isTableRow(line) && i + 1 < lines.length && isTableDivider(lines[i + 1].trim())) {
+        const headers = splitTableRow(line)
+        const rows: string[][] = []
+        i += 2
+        while (i < lines.length && isTableRow(lines[i])) {
+          rows.push(splitTableRow(lines[i]))
+          i++
+        }
+        nodes.push(
+          <div key={`table-${i}`} className="message-table-wrap">
+            <table className="message-table">
+              <thead>
+                <tr>{headers.map((header, idx) => <th key={idx}>{renderInlineText(header)}</th>)}</tr>
+              </thead>
+              <tbody>
+                {rows.map((row, rowIdx) => (
+                  <tr key={rowIdx}>
+                    {headers.map((_, cellIdx) => <td key={cellIdx}>{renderInlineText(row[cellIdx] || '')}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+        continue
+      }
       if (/^#{1,3}\s+/.test(line) || (/^[A-Z][^.!?]{2,60}:$/.test(line) && !/^(Step|Example)\s+\d/i.test(line))) {
-        nodes.push(<h3 key={`h-${i}`}>{line.replace(/^#{1,3}\s+/, '').replace(/:$/, '')}</h3>)
+        nodes.push(<h3 key={`h-${i}`}>{renderInlineText(line.replace(/^#{1,3}\s+/, '').replace(/:$/, ''))}</h3>)
         i++
         continue
       }
@@ -720,7 +758,7 @@ export default function Page() {
           <ul key={`ul-${i}`}>
             {items.map((it, idx) => (
               <li key={idx} className="whitespace-pre-line">
-                {it}
+                {renderInlineText(it)}
               </li>
             ))}
           </ul>
@@ -737,7 +775,7 @@ export default function Page() {
           <ol key={`ol-${i}`}>
             {items.map((it, idx) => (
               <li key={idx} className="whitespace-pre-line">
-                {it}
+                {renderInlineText(it)}
               </li>
             ))}
           </ol>
@@ -757,7 +795,7 @@ export default function Page() {
       const paraText = paraLines.join(' ').trim()
       nodes.push(
         <p key={`p-${i}`} className="whitespace-pre-line">
-          {paraText}
+          {renderInlineText(paraText)}
         </p>
       )
     }
@@ -779,6 +817,11 @@ export default function Page() {
     if (pendingAttachment?.previewUrl) URL.revokeObjectURL(pendingAttachment.previewUrl)
     setPendingAttachment(null)
     setAttachmentError(null)
+  }
+
+  function handleAttachmentInput(event: React.ChangeEvent<HTMLInputElement>) {
+    selectAttachment(event.target.files?.[0])
+    event.target.value = ''
   }
 
   async function handleSend(overrideText?: string) {
@@ -1286,6 +1329,51 @@ export default function Page() {
     return <section className="workspace-content"><div className="workspace-heading"><div><h1>Study Plans</h1><p className="workspace-muted">Tell Cognita what you want to learn and build a plan around your goal.</p></div><button className="primary-button" onClick={() => session ? setShowPlanForm(true) : setShowAuthModal(true)}>New study plan</button></div>{studyPlans.length === 0 ? <div className="empty-workspace">Your first plan can turn a goal into clear weekly topics and practice.</div> : <div className="workspace-list">{studyPlans.map((plan) => { const topics = plan.study_plan_topics || []; const completed = topics.filter((topic) => topic.completed).length; const next = topics.find((topic) => !topic.completed)?.title || 'Complete'; return <button className="workspace-list-item" key={plan.id} onClick={() => setSelectedPlan(plan)}><strong>{plan.title}</strong><span>{plan.subject} · {plan.learner_level} · {topics.length ? Math.round((completed / topics.length) * 100) : 0}%</span><small>{plan.objective || 'Learning goal not set'} · Next: {next}</small></button> })}</div>}</section>
   }
 
+  function sendHomeworkRequest(event: React.FormEvent) {
+    event.preventDefault()
+    const details = homeworkPrompt.trim()
+    if (!details && !pendingAttachment) {
+      setAttachmentError('Add the question, or attach a photo or document first.')
+      return
+    }
+    setAttachmentError(null)
+    const prompt = [
+      'Homework Helper request.',
+      `Help style: ${homeworkType}.`,
+      `Subject: ${subject || activeProjectContext?.subject || 'general homework'}.`,
+      'Guide me step by step. Do not just give the final answer unless I ask for it.',
+      details ? `Question: ${details}` : 'Use the attached file or photo as the question.'
+    ].join('\n')
+    setWorkspaceView('chat')
+    setInput('')
+    void handleSend(prompt)
+  }
+
+  function renderHomeworkView() {
+    return <section className="workspace-content homework-helper">
+      <div className="workspace-heading"><div><h1>Homework Helper</h1><p className="workspace-muted">Work through a question, worksheet, or photo without skipping the thinking.</p></div></div>
+      <form className="workspace-form homework-form" onSubmit={sendHomeworkRequest}>
+        <div className="form-two-column">
+          <label>Subject<input value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="Math, science, history..." /></label>
+          <label>Help style<select value={homeworkType} onChange={(event) => setHomeworkType(event.target.value)}><option>Explain and guide</option><option>Check my answer</option><option>Show the method</option><option>Make practice questions</option></select></label>
+        </div>
+        <label>Question<textarea value={homeworkPrompt} onChange={(event) => setHomeworkPrompt(event.target.value)} placeholder="Paste the question here, or attach a photo/file below." rows={6} /></label>
+        <div className="homework-upload-row">
+          <div className="attachment-picker">
+            <button type="button" className="attachment-button attachment-button-wide" onClick={() => setAttachmentMenuOpen((open) => !open)} aria-label="Add homework attachment" aria-expanded={attachmentMenuOpen}><Icon name="paperclip" /> <span>Add photo or file</span></button>
+            {attachmentMenuOpen && <div className="attachment-menu" role="menu"><button type="button" onClick={() => cameraInputRef.current?.click()} role="menuitem">Take photo</button><button type="button" onClick={() => imageInputRef.current?.click()} role="menuitem">Choose image</button><button type="button" onClick={() => documentInputRef.current?.click()} role="menuitem">Upload file</button></div>}
+            <input ref={cameraInputRef} className="sr-only" type="file" accept="image/*" capture="environment" onChange={handleAttachmentInput} />
+            <input ref={imageInputRef} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={handleAttachmentInput} />
+            <input ref={documentInputRef} className="sr-only" type="file" accept="application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={handleAttachmentInput} />
+          </div>
+          {pendingAttachment && <div className="attachment-preview homework-attachment-preview" role="status">{pendingAttachment.previewUrl ? <img src={pendingAttachment.previewUrl} alt="Attachment preview" /> : <span className="attachment-file-icon" aria-hidden="true">FILE</span>}<span className="attachment-details"><strong>{pendingAttachment.file.name}</strong><small>{Math.ceil(pendingAttachment.file.size / 1024)} KB</small></span><button type="button" className="attachment-remove" onClick={removeAttachment} aria-label="Remove attachment">×</button></div>}
+        </div>
+        {attachmentError && <div className="attachment-error" role="alert">{attachmentError}</div>}
+        <button className="primary-button" type="submit" disabled={isThinking}>Start helper</button>
+      </form>
+    </section>
+  }
+
   function renderYouTubeView() {
     return <section className="workspace-content">
       <div className="workspace-heading"><div><h1>Learn with video</h1><p className="workspace-muted">Find focused lessons for a topic, project, or study plan.</p></div></div>
@@ -1338,7 +1426,7 @@ export default function Page() {
           <button className="nav-item nav-icon-item" onClick={() => openWorkspace('projects')}><Icon name="folder" /> <span>Projects</span></button>
           <div className="nav-section-label">Learning</div>
           <button className="nav-item nav-icon-item" onClick={() => openWorkspace('plans')}><Icon name="book" /> <span>Study Plans</span></button>
-          <button className="nav-item nav-icon-item" disabled><Icon name="spark" /> <span>Homework Helper</span></button>
+          <button className="nav-item nav-icon-item" onClick={() => { setWorkspaceView('homework'); setMobileNavOpen(false) }}><Icon name="spark" /> <span>Homework Helper</span></button>
           <button className="nav-item nav-icon-item" disabled><Icon name="spark" /> <span>Practice</span></button>
           <button className="nav-item nav-icon-item" disabled><Icon name="spark" /> <span>Simulations</span></button>
           <div className="nav-section-label">Resources</div>
@@ -1371,7 +1459,7 @@ export default function Page() {
       </aside>
       {mobileNavOpen && <button className="sidebar-backdrop" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />}
       <main className="main" style={{ width: '100%' }}>
-        {workspaceView !== 'chat' ? <div className="workspace-panel-shell"><button className="mobile-workspace-back" onClick={() => setWorkspaceView('chat')} aria-label="Back to chat"><Icon name="arrow-left" /> <span>Back to chat</span></button>{workspaceError && <div className="workspace-error" role="alert">{workspaceError}</div>}{workspaceView === 'projects' ? renderProjectView() : workspaceView === 'plans' ? renderPlanView() : renderYouTubeView()}</div> : <div className="chat-container" style={{ width: '100%' }}>
+        {workspaceView !== 'chat' ? <div className="workspace-panel-shell"><button className="mobile-workspace-back" onClick={() => setWorkspaceView('chat')} aria-label="Back to chat"><Icon name="arrow-left" /> <span>Back to chat</span></button>{workspaceError && <div className="workspace-error" role="alert">{workspaceError}</div>}{workspaceView === 'projects' ? renderProjectView() : workspaceView === 'plans' ? renderPlanView() : workspaceView === 'homework' ? renderHomeworkView() : renderYouTubeView()}</div> : <div className="chat-container" style={{ width: '100%' }}>
           <div className="chat-area">
             <div className="chat-header">
               <div className="chat-header-left">
@@ -1448,9 +1536,9 @@ export default function Page() {
               <div className="attachment-picker">
                 <button type="button" className="attachment-button" onClick={() => setAttachmentMenuOpen((open) => !open)} aria-label="Add attachment" aria-expanded={attachmentMenuOpen}><Icon name="paperclip" /></button>
                 {attachmentMenuOpen && <div className="attachment-menu" role="menu"><button type="button" onClick={() => cameraInputRef.current?.click()} role="menuitem">Take photo</button><button type="button" onClick={() => imageInputRef.current?.click()} role="menuitem">Choose image</button><button type="button" onClick={() => documentInputRef.current?.click()} role="menuitem">Upload file</button></div>}
-                <input ref={cameraInputRef} className="sr-only" type="file" accept="image/*" capture="environment" onChange={(event) => selectAttachment(event.target.files?.[0])} />
-                <input ref={imageInputRef} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => selectAttachment(event.target.files?.[0])} />
-                <input ref={documentInputRef} className="sr-only" type="file" accept="application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => selectAttachment(event.target.files?.[0])} />
+                <input ref={cameraInputRef} className="sr-only" type="file" accept="image/*" capture="environment" onChange={handleAttachmentInput} />
+                <input ref={imageInputRef} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={handleAttachmentInput} />
+                <input ref={documentInputRef} className="sr-only" type="file" accept="application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={handleAttachmentInput} />
               </div>
               <textarea
                 value={input}
