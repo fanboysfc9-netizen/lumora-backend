@@ -35,6 +35,9 @@ router.post('/', createOptionalSupabaseAuthMiddleware(), async (req: Request, re
   const requestStartedAt = performance.now()
   try {
     const { message, conversationId } = req.body
+    const clientMessage = typeof req.body?.clientMessage === 'string' && req.body.clientMessage.trim()
+      ? req.body.clientMessage.trim().slice(0, 4000)
+      : message
     const userId = req.auth?.userId
     if (!message) return res.status(400).json({ error: 'message is required' })
     const bodyMode = req.body?.mode as string | undefined
@@ -59,7 +62,7 @@ router.post('/', createOptionalSupabaseAuthMiddleware(), async (req: Request, re
       { userId, accessToken: req.auth!.accessToken },
       conversationId,
       [
-        { role: 'user', content: message, mode: mappedMode },
+        { role: 'user', content: clientMessage, mode: mappedMode },
         { role: 'assistant', content: result.text || '', mode: mappedMode }
       ]
     )
@@ -88,6 +91,9 @@ router.post('/multimodal', createOptionalSupabaseAuthMiddleware(), (req, res, ne
     const learningContext = userId
       ? await resolveLearningContext({ userId, accessToken: req.auth!.accessToken }, req.body?.learningContext || submittedContext)
       : null
+    const clientMessage = typeof req.body?.clientMessage === 'string' && req.body.clientMessage.trim()
+      ? req.body.clientMessage.trim().slice(0, 4000)
+      : `${attachment.filename}${req.body?.message ? `: ${String(req.body.message).slice(0, 4000)}` : ''}`
     const result = await cognitaService.handleMultimodalMessage({
       userId,
       message: typeof req.body?.message === 'string' ? req.body.message.slice(0, 4000) : '',
@@ -101,7 +107,7 @@ router.post('/multimodal', createOptionalSupabaseAuthMiddleware(), (req, res, ne
       { userId, accessToken: req.auth!.accessToken },
       req.body?.conversationId,
       [
-        { role: 'user', content: `${attachment.filename}${req.body?.message ? `: ${String(req.body.message).slice(0, 4000)}` : ''}`, mode: mappedMode },
+        { role: 'user', content: clientMessage, mode: mappedMode },
         { role: 'assistant', content: result.text || '', mode: mappedMode }
       ]
     )

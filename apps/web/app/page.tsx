@@ -824,7 +824,7 @@ export default function Page() {
     event.target.value = ''
   }
 
-  async function handleSend(overrideText?: string) {
+  async function handleSend(overrideText?: string, options?: { displayText?: string }) {
     if (authLoading) return
     const text = (overrideText ?? input).trim()
     if (!text && !pendingAttachment) return
@@ -839,7 +839,7 @@ export default function Page() {
 
     setInput('')
     chatRequestInFlightRef.current = true
-    const displayText = text || `Attachment: ${pendingAttachment?.file.name || 'uploaded file'}`
+    const displayText = (options?.displayText || text || `Attachment: ${pendingAttachment?.file.name || 'uploaded file'}`).trim()
     const messageStamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const userMsg: Msg = { role: 'user', text: displayText, id: `u-${messageStamp}`, subject, mode: activeMode }
     setMessages((m) => [...m, userMsg])
@@ -884,13 +884,13 @@ export default function Page() {
       const attachment = pendingAttachment
       const isMultimodal = Boolean(attachment)
       const endpoint = isMultimodal ? `${API_URL!}/multimodal` : API_URL!
-      const body = isMultimodal ? (() => { const form = new FormData(); form.append('attachment', attachment!.file); form.append('message', text); form.append('conversationId', conversationId || ''); form.append('mode', activeMode); form.append('projectContext', JSON.stringify(projectContextPayload || {})); return form })() : JSON.stringify({ message: text, conversationId, mode: activeMode, subject: requestSubject, skill: computeSkillForSubject(requestSubject), projectContext: projectContextPayload })
+      const body = isMultimodal ? (() => { const form = new FormData(); form.append('attachment', attachment!.file); form.append('message', text); form.append('clientMessage', displayText); form.append('conversationId', conversationId || ''); form.append('mode', activeMode); form.append('projectContext', JSON.stringify(projectContextPayload || {})); return form })() : JSON.stringify({ message: text, clientMessage: displayText, conversationId, mode: activeMode, subject: requestSubject, skill: computeSkillForSubject(requestSubject), projectContext: projectContextPayload })
       const res = requestSession
         ? await authenticatedFetch(endpoint, requestSession, { method: 'POST', body })
         : await fetch(endpoint, { method: 'POST', ...(isMultimodal ? {} : { headers: { 'Content-Type': 'application/json' } }), body })
       const data = await res.json()
       try { markTiming('responseReceived') } catch (e) {}
-      try { sendVoiceMetrics({ textLength: text.length, subject, mode: activeMode }) } catch (e) {}
+      try { sendVoiceMetrics({ textLength: displayText.length, subject, mode: activeMode }) } catch (e) {}
       if (data?.ok) {
         if (requestSession && data.conversationId) {
           setConversationId(data.conversationId)
@@ -1346,7 +1346,7 @@ export default function Page() {
     ].join('\n')
     setWorkspaceView('chat')
     setInput('')
-    void handleSend(prompt)
+    void handleSend(prompt, { displayText: details || `Homework attachment: ${pendingAttachment?.file.name || 'uploaded file'}` })
   }
 
   function renderHomeworkView() {
