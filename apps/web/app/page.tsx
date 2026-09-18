@@ -1341,7 +1341,7 @@ export default function Page() {
       'Homework Helper request.',
       `Help style: ${homeworkType}.`,
       `Subject: ${subject || activeProjectContext?.subject || 'general homework'}.`,
-      'Guide me step by step. Do not just give the final answer unless I ask for it.',
+      'Use the format that fits the question. For definitions or comparisons, answer in short clear paragraphs or bullets, not numbered steps. Use numbered steps only for calculations, proofs, procedures, or worked solutions. Do not just give the final answer unless I ask for it.',
       details ? `Question: ${details}` : 'Use the attached file or photo as the question.'
     ].join('\n')
     setWorkspaceView('chat')

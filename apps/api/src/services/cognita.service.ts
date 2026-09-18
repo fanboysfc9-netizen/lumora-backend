@@ -28,6 +28,37 @@ import { LearningContext, learningContextPrompt } from './learning-context.servi
 import { adaptivePromptInstruction, buildAdaptiveLearningSignal, decideNale, updateAdaptiveVortex, NaleDecision } from 'core/cortex-adapt/adaptive-intelligence'
 import { NormalizedMultimodalInput, attachmentSummary } from './multimodal.service'
 
+function isDefinitionStyleHomework(message: string) {
+  const text = String(message || '').toLowerCase()
+  if (!text.includes('homework helper request')) return false
+  const question = text.split('question:').pop() || text
+  return /\b(what is|what are|define|definition of|meaning of|difference between|compare)\b/.test(question) &&
+    !/\b(solve|calculate|compute|prove|derive|equation|show your work|steps?)\b/.test(question)
+}
+
+function cleanDefinitionHomeworkAnswer(text: string) {
+  const lines = String(text || '').replace(/\r/g, '').split('\n')
+  const cleaned = lines
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !/^#{1,6}\s*(steps?|explanation|recap|summary)\s*$/i.test(line))
+    .filter((line) => !/^\*{0,2}(steps?|explanation|recap|summary)\*{0,2}\s*$/i.test(line))
+    .map((line) => line
+      .replace(/^\s*\d+[\.)]\s+/, '')
+      .replace(/^\*{1,2}(Explanation|Steps?|Recap|Summary)\*{0,2}\s*[:\-]?\s*/i, '')
+      .replace(/\\\*/g, '*')
+      .trim()
+    )
+    .filter(Boolean)
+
+  const deduped: string[] = []
+  for (const line of cleaned) {
+    if (deduped[deduped.length - 1]?.toLowerCase() === line.toLowerCase()) continue
+    deduped.push(line)
+  }
+  return deduped.join('\n\n').replace(/\n{3,}/g, '\n\n').trim()
+}
+
 class CognitaService {
   ai = aiService
   router = routerService
@@ -194,9 +225,10 @@ class CognitaService {
       corePrompt.prompt = `${corePrompt.prompt}\n\n${adaptivePromptInstruction(adaptiveDecision)}`
       messages[0].content = corePrompt.prompt
     }
+    const definitionStyleHomework = isDefinitionStyleHomework(message)
 
     // Decide whether to use iterative (stepwise) generation to enable mid-response adaptation
-    const needIterative = !!approxDecision && (
+    const needIterative = !definitionStyleHomework && !!approxDecision && (
       approxDecision.teachingMode === 'guided_breakdown' ||
       approxDecision.simplificationIntensity > 0.5 ||
       approxDecision.exampleDensity > 0.6 ||
@@ -331,7 +363,9 @@ class CognitaService {
 
     // --- Lumora Core post-processing (light review) ---
     let post = lumoraCore.postProcess(aiResult.text || '')
-    let finalText = lumoraCore.formatResponseAsText(post)
+    let finalText = definitionStyleHomework
+      ? cleanDefinitionHomeworkAnswer(aiResult.text || '')
+      : lumoraCore.formatResponseAsText(post)
 
 
     // If language mismatch detected by Core, attempt one regeneration with explicit English enforcement
@@ -348,7 +382,9 @@ class CognitaService {
         const regenResult = await this.ai.createChatCompletion(regenMessages as any, { mode })
         if (regenResult.success) {
           post = lumoraCore.postProcess(regenResult.text || '')
-          finalText = lumoraCore.formatResponseAsText(post)
+          finalText = definitionStyleHomework
+            ? cleanDefinitionHomeworkAnswer(regenResult.text || '')
+            : lumoraCore.formatResponseAsText(post)
           // replace aiResult raw/text for downstream logging and persistence
           aiResult.raw = regenResult.raw
           aiResult.text = regenResult.text
