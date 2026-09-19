@@ -345,7 +345,7 @@ export default function Page() {
       setConversationError(null)
       try {
         const query = conversationSearch.trim() ? `?search=${encodeURIComponent(conversationSearch.trim())}` : ''
-        const res = await authenticatedFetch(`${buildWorkspaceApiUrl(API_URL, '/conversations')}${query}`, session)
+        const res = await authenticatedFetch(`${API_URL!}/conversations${query}`, session)
         const data = await res.json()
         if (!res.ok || !data?.ok) throw new Error(data?.error || 'Conversations unavailable')
         if (Array.isArray(data.conversations)) setConversations(data.conversations)
@@ -912,7 +912,7 @@ export default function Page() {
         recordResponseReceived(assistantMsg.id!, subject, assistantText, isEdu)
         maybeAskUnderstandingCheck(assistantMsg, isEdu)
         if (requestSession && data.conversationId) {
-          void authenticatedFetch(buildWorkspaceApiUrl(API_URL, '/conversations'), requestSession)
+          void authenticatedFetch(`${API_URL!}/conversations`, requestSession)
             .then((conversationsResponse) => conversationsResponse.json())
             .then((conversationsData) => {
               if (conversationsData?.ok && Array.isArray(conversationsData.conversations)) setConversations(conversationsData.conversations)
@@ -1040,7 +1040,7 @@ export default function Page() {
     setMobileNavOpen(false)
     if (!session) return
     try {
-      const response = await authenticatedFetch(buildWorkspaceApiUrl(API_URL, '/conversations'), session)
+      const response = await authenticatedFetch(`${API_URL!}/conversations`, session)
       const data = await response.json()
       if (response.ok && data?.ok && Array.isArray(data.conversations)) setConversations(data.conversations)
     } catch (error) {
