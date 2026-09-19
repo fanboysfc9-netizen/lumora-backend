@@ -10,6 +10,7 @@ export function run() {
   assert(isInternalPromptLeak('Answer user questions as a friendly, student-focused tutor.'), 'Instruction-shaped tutor output must be detected')
   assert(!isInternalPromptLeak('Build a learning plan by choosing a subject and setting a weekly goal.'), 'User-facing learning-plan content must remain allowed')
   assert(!isInternalPromptLeak('A Python variable is a name that refers to a value.'), 'Normal answers must remain allowed')
+  assert(isInternalPromptLeak('Okay, here is a light explanation.'), 'Model acknowledgement filler must be detected')
   console.log('[PASS] prompt output guard')
 }
 

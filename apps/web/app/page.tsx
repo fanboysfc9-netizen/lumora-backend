@@ -688,9 +688,9 @@ export default function Page() {
     const lines = text.replace(/\r/g, '').split('\n')
     const nodes: React.ReactNode[] = []
     const renderInlineText = (value: string) => {
-      const parts = value.split(/(\*\*[^*]+\*\*)/g)
+      const parts = value.split(/(\*\*[^*]+\*\*|__[^_]+__)/g)
       return parts.map((part, idx) => {
-        const match = part.match(/^\*\*([^*]+)\*\*$/)
+        const match = part.match(/^(?:\*\*|__)(.*?)(?:\*\*|__)$/)
         return match ? <strong key={idx}>{match[1]}</strong> : part
       })
     }
@@ -1408,7 +1408,7 @@ export default function Page() {
         {session && <div className="conversation-history">
           {conversations.map((conversation) => (
             <div key={conversation.id} className="conversation-history-item">
-              <button className="conversation-item" onClick={() => openConversation(conversation)}>
+              <button type="button" className="conversation-item" onClick={() => openConversation(conversation)}>
                 <strong>{conversation.title}</strong><small>{formatConversationDate(conversation.updated_at)}</small>
               </button>
               <div className="conversation-actions">

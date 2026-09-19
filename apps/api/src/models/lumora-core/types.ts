@@ -19,6 +19,8 @@ export interface LumoraCoreResponse {
   recap?: string
   /** Raw text for downstream rendering or debugging */
   raw?: string
+  /** Cleaned Markdown intended for the client renderer */
+  formatted?: string
 }
 
 export interface PromptBuildResult {

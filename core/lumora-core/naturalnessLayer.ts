@@ -3,7 +3,7 @@ import { ResponseStructure } from './types'
 const KNOWN_LABELS = ['Explanation', 'Why it works', 'Intuition', 'Steps', 'Example', 'Recap', 'Summary']
 
 function stripFormattingMarkers(s: string) {
-  return s.replace(/\*\*(.*?)\*\*/g, '$1').replace(/__([^_]+)__/g, '$1').replace(/\*([^\*]+)\*/g, '$1')
+  return s
 }
 
 /** Parse labeled sections into a map. */
@@ -45,6 +45,12 @@ function naturalizeSteps(s: string) {
 export function applyNaturalness(rawText: string, structure?: ResponseStructure): string {
   if (!rawText) return ''
   let text = stripFormattingMarkers(rawText)
+
+  text = text
+    .replace(/^\s*(?:okay|ok|sure|alright|of course)\s*[,!:.-]\s*/i, '')
+    .replace(/^\s*(?:here(?:'s| is)\s+(?:a|the)\s+(?:brief|simple|clear|light)\s+)?(?:explanation|answer)\s*[:.-]\s*/i, '')
+    .replace(/^\s*(?:steps?|step-by-step)\s*:\s*\n?/im, '')
+    .trim()
 
   // If text contains labeled sections, parse them
   const sections = parseLabeledSections(text)

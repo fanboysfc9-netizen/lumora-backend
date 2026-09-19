@@ -32,7 +32,7 @@ function isDefinitionStyleHomework(message: string) {
   const text = String(message || '').toLowerCase()
   if (!text.includes('homework helper request')) return false
   const question = text.split('question:').pop() || text
-  return /\b(what is|what are|define|definition of|meaning of|difference between|compare)\b/.test(question) &&
+  return /\b(what is|what are|define|definition of|meaning of|difference between|compare|explain|describe|concept of|overview of)\b/.test(question) &&
     !/\b(solve|calculate|compute|prove|derive|equation|show your work|steps?)\b/.test(question)
 }
 
@@ -57,6 +57,14 @@ function cleanDefinitionHomeworkAnswer(text: string) {
     deduped.push(line)
   }
   return deduped.join('\n\n').replace(/\n{3,}/g, '\n\n').trim()
+}
+
+function isInternalPromptRequest(message: string) {
+  return /\b(?:system|developer|hidden|internal)\s+(?:prompt|instruction|message|rules?)\b|\b(?:reveal|show|print|repeat|tell me)\b.{0,40}\b(?:prompt|instructions|system message)\b/i.test(message)
+}
+
+function internalPromptResponse() {
+  return "I can't provide internal instructions or hidden prompts. I can explain the topic or help with a normal question instead."
 }
 
 class CognitaService {
@@ -85,6 +93,10 @@ class CognitaService {
     }
 
     const mode = mapMode(providedMode)
+    if (isInternalPromptRequest(message)) {
+      const text = internalPromptResponse()
+      return { mode, text, formatted: formatResponse(text, mode) }
+    }
     const lowIntentConversational = isLowIntentConversational(message)
 
     // Delegate AI request and memory handling to groq.service

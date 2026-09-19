@@ -6,6 +6,7 @@ export function buildPrompt(input: LumoraCoreInput): PromptBuildResult {
 }
 
 export function formatResponseAsText(resp: LumoraCoreResponse): string {
+  if (resp.formatted?.trim()) return resp.formatted.trim()
   const parts: string[] = []
   if (resp.explanation) parts.push(resp.explanation.trim())
   if ((resp as any).intuition) parts.push(((resp as any).intuition || '').trim())
@@ -28,7 +29,8 @@ export function postProcess(rawText: string): LumoraCoreResponse & { _meta?: any
     steps: pp.steps,
     example: pp.example,
     recap: pp.recap,
-    raw: pp.raw
+    raw: pp.raw,
+    formatted: pp.formatted
   }
   resp._meta = { languageMismatch: pp.languageMismatch, detectedLanguage: pp.detectedLanguage, formatted: pp.formatted }
   return resp

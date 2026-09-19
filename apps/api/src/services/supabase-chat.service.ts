@@ -6,7 +6,10 @@ type ChatMessage = { role: 'user' | 'assistant' | 'system'; content: string; mod
 export type ConversationSummary = { id: string; title: string; created_at: string; updated_at: string }
 
 export function titleFromMessage(message: string) {
-  const words = String(message || '').trim().replace(/\s+/g, ' ').split(' ').filter(Boolean)
+  const raw = String(message || '').trim()
+  const homeworkQuestion = raw.match(/(?:^|\n)\s*Question:\s*([^\n]+)/i)?.[1]
+  const source = homeworkQuestion || raw
+  const words = source.replace(/\s+/g, ' ').split(' ').filter(Boolean)
   const withoutPrompt = words.join(' ').replace(/^(please\s+)?(teach me|help me|can you|could you|would you)\s+/i, '').replace(/[.!?]+$/, '').trim()
   const title = withoutPrompt.split(' ').map((word) => word ? `${word.charAt(0).toUpperCase()}${word.slice(1)}` : word).join(' ')
   if (title.length <= 60) return title || 'New conversation'
@@ -78,16 +81,34 @@ export async function persistExchange(auth: VerifiedAuth, conversationId: string
 
 export async function listConversations(auth: VerifiedAuth, search?: string) {
   const supabase = client(auth)
+  const term = search?.trim().slice(0, 80)
   let query = supabase
     .from('conversations')
     .select('id,title,created_at,updated_at')
     .eq('user_id', auth.userId)
     .order('updated_at', { ascending: false })
     .limit(100)
-  if (search?.trim()) query = query.ilike('title', `%${search.trim().slice(0, 80)}%`)
+  if (term) query = query.ilike('title', `%${term}%`)
   const { data, error } = await query
   if (error) throw error
-  return (data || []) as ConversationSummary[]
+  const titleMatches = (data || []) as ConversationSummary[]
+  if (!term) return titleMatches
+
+  const { data: messageMatches, error: messageError } = await supabase
+    .from('messages')
+    .select('conversation_id,conversations!inner(id,title,created_at,updated_at)')
+    .eq('user_id', auth.userId)
+    .ilike('content', `%${term}%`)
+    .limit(100)
+  if (messageError) throw messageError
+
+  const merged = new Map<string, ConversationSummary>()
+  for (const conversation of titleMatches) merged.set(conversation.id, conversation)
+  for (const row of messageMatches || []) {
+    const conversation = Array.isArray((row as any).conversations) ? (row as any).conversations[0] : (row as any).conversations
+    if (conversation?.id) merged.set(conversation.id, conversation as ConversationSummary)
+  }
+  return Array.from(merged.values()).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()).slice(0, 100)
 }
 
 export async function renameConversation(auth: VerifiedAuth, conversationId: string, title: string) {

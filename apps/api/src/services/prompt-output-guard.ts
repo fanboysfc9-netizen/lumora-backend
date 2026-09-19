@@ -18,6 +18,8 @@ export function isInternalPromptLeak(text: string): boolean {
     'routing'
   ]
 
+  if (/^(?:okay|ok|sure|alright|of course)\b.{0,80}\b(?:here|explanation|answer|steps?)\b/i.test(normalized)) return true
+
   return (
     /^you are\b/.test(normalized) && /(tutor|assistant|student|system prompt|instruction)/.test(normalized)
   ) || (
