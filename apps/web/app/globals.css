@@ -38,6 +38,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .sidebar-search input { width: 100%; border: 0; outline: 0; background: transparent; color: #d5d2ca; font-size: 13px; }
 .sidebar-search input::placeholder { color: #77756e; }
 .conversation-history { display: grid; gap: 2px; max-height: 150px; margin-bottom: 18px; overflow-y: auto; }
+.conversation-status { margin: 4px 10px 8px; color: #77756e; font-size: 11px; line-height: 1.4; }
+.conversation-status-error { color: var(--danger); }
 .conversation-item { padding: 7px 10px; overflow: hidden; background: transparent; color: #aaa79f; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .conversation-history-item { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .conversation-history-item .conversation-item { display: grid; flex: 1; gap: 2px; min-width: 0; }

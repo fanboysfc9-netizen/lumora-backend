@@ -173,6 +173,8 @@ export default function Page() {
   const chatRequestInFlightRef = useRef(false)
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [conversationSearch, setConversationSearch] = useState('')
+  const [conversationsLoading, setConversationsLoading] = useState(false)
+  const [conversationError, setConversationError] = useState<string | null>(null)
   const [input, setInput] = useState('')
   const [mode, setMode] = useState<string>('chat')
   const [activeMode, setActiveMode] = useState<string>(() => {
@@ -336,15 +338,22 @@ export default function Page() {
     async function loadConversations() {
       if (!session) {
         setConversations([])
+        setConversationError(null)
         return
       }
+      setConversationsLoading(true)
+      setConversationError(null)
       try {
         const query = conversationSearch.trim() ? `?search=${encodeURIComponent(conversationSearch.trim())}` : ''
-        const res = await authenticatedFetch(`${API_URL!}/conversations${query}`, session)
+        const res = await authenticatedFetch(`${buildWorkspaceApiUrl(API_URL, '/conversations')}${query}`, session)
         const data = await res.json()
-        if (data?.ok && Array.isArray(data.conversations)) setConversations(data.conversations)
+        if (!res.ok || !data?.ok) throw new Error(data?.error || 'Conversations unavailable')
+        if (Array.isArray(data.conversations)) setConversations(data.conversations)
       } catch (err) {
         console.warn('failed to load conversations', err)
+        setConversationError(err instanceof Error ? err.message : 'Conversations unavailable')
+      } finally {
+        setConversationsLoading(false)
       }
     }
     loadConversations()
@@ -903,7 +912,7 @@ export default function Page() {
         recordResponseReceived(assistantMsg.id!, subject, assistantText, isEdu)
         maybeAskUnderstandingCheck(assistantMsg, isEdu)
         if (requestSession && data.conversationId) {
-          void authenticatedFetch(`${API_URL!}/conversations`, requestSession)
+          void authenticatedFetch(buildWorkspaceApiUrl(API_URL, '/conversations'), requestSession)
             .then((conversationsResponse) => conversationsResponse.json())
             .then((conversationsData) => {
               if (conversationsData?.ok && Array.isArray(conversationsData.conversations)) setConversations(conversationsData.conversations)
@@ -1031,7 +1040,7 @@ export default function Page() {
     setMobileNavOpen(false)
     if (!session) return
     try {
-      const response = await authenticatedFetch(`${API_URL!}/conversations`, session)
+      const response = await authenticatedFetch(buildWorkspaceApiUrl(API_URL, '/conversations'), session)
       const data = await response.json()
       if (response.ok && data?.ok && Array.isArray(data.conversations)) setConversations(data.conversations)
     } catch (error) {
@@ -1421,8 +1430,11 @@ export default function Page() {
           <input type="text" placeholder="Search conversations" value={conversationSearch} onChange={(event) => setConversationSearch(event.target.value)} />
         </div>
 
-        {session && <div className="conversation-history">
-          {conversations.map((conversation) => (
+        {session && <div className="conversation-history" aria-label="Recent conversations">
+          {conversationsLoading && <p className="conversation-status">Loading conversations...</p>}
+          {!conversationsLoading && conversationError && <p className="conversation-status conversation-status-error">{conversationError}</p>}
+          {!conversationsLoading && !conversationError && conversations.length === 0 && <p className="conversation-status">No saved conversations yet.</p>}
+          {!conversationsLoading && !conversationError && conversations.map((conversation) => (
             <div key={conversation.id} className="conversation-history-item">
               <button type="button" className="conversation-item" onClick={() => openConversation(conversation)}>
                 <strong>{conversation.title}</strong><small>{formatConversationDate(conversation.updated_at)}</small>
