@@ -16,6 +16,9 @@ type ProjectContext = { projectId?: string; projectName: string; subject?: strin
 type Conversation = { id: string; title: string; created_at: string; updated_at: string }
 type YouTubeVideo = { videoId: string; title: string; thumbnailUrl: string; channelTitle: string; publishedAt: string | null; watchUrl: string; embedUrl: string }
 type PendingAttachment = { file: File; previewUrl: string | null; kind: 'image' | 'document' }
+type PracticeKind = 'test' | 'quiz' | 'exam'
+type PracticeQuestion = { id: string; topic: string; prompt: string; answer: string; source?: string }
+type PracticePacket = { plan: { id: string; title: string; subject: string }; kind: PracticeKind; questions: PracticeQuestion[]; sources: Array<{ title: string; snippet: string; source?: string }> }
 
 type TutorName = 'Nira' | 'Elara' | 'Solara'
 
@@ -118,7 +121,7 @@ export default function Page() {
     try { return localStorage.getItem('lumora_theme') || 'light' } catch { return 'light' }
   })
   const [showStats, setShowStats] = useState(false)
-  const [workspaceView, setWorkspaceView] = useState<'chat' | 'projects' | 'plans' | 'youtube' | 'homework'>('chat')
+  const [workspaceView, setWorkspaceView] = useState<'chat' | 'projects' | 'plans' | 'youtube' | 'homework' | 'practice' | 'simulations' | 'resources'>('chat')
   const [projects, setProjects] = useState<Project[]>([])
   const [studyPlans, setStudyPlans] = useState<StudyPlan[]>([])
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
@@ -165,6 +168,15 @@ export default function Page() {
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const [homeworkType, setHomeworkType] = useState('Explain and guide')
   const [homeworkPrompt, setHomeworkPrompt] = useState('')
+  const [practiceKind, setPracticeKind] = useState<PracticeKind>('quiz')
+  const [practicePlanId, setPracticePlanId] = useState('')
+  const [practicePacket, setPracticePacket] = useState<PracticePacket | null>(null)
+  const [practiceLoading, setPracticeLoading] = useState(false)
+  const [practiceError, setPracticeError] = useState<string | null>(null)
+  const [practiceAnswers, setPracticeAnswers] = useState<Record<string, string>>({})
+  const [practiceChecked, setPracticeChecked] = useState<Record<string, boolean>>({})
+  const [simulationType, setSimulationType] = useState<'flashcards' | 'science' | 'math' | 'subject'>('flashcards')
+  const [simulationStep, setSimulationStep] = useState(0)
 
   const defaultStats = { totalMessages: 0, responses: 0, understood: 0, subjects: {} as Record<string, { messages: number; understood: number }> }
   const [stats, setStats] = useState(() => defaultStats)
@@ -1399,6 +1411,67 @@ export default function Page() {
     </section>
   }
 
+  async function generatePractice() {
+    if (!session) {
+      setAuthMode('signin')
+      setShowAuthModal(true)
+      return
+    }
+    if (!practicePlanId) {
+      setPracticeError('Choose a study plan before starting practice.')
+      return
+    }
+    setPracticeLoading(true)
+    setPracticeError(null)
+    setPracticePacket(null)
+    setPracticeAnswers({})
+    setPracticeChecked({})
+    try {
+      const response = await authenticatedFetch(`${API_ROOT}/practice/generate`, session, {
+        method: 'POST',
+        body: JSON.stringify({ studyPlanId: practicePlanId, kind: practiceKind })
+      })
+      const data = await response.json()
+      if (!response.ok || !data?.ok) throw new Error(data?.error || 'Practice could not be prepared')
+      setPracticePacket(data.packet)
+    } catch (error) {
+      setPracticeError(error instanceof Error ? error.message : 'Practice could not be prepared')
+    } finally {
+      setPracticeLoading(false)
+    }
+  }
+
+  function renderPracticeView() {
+    if (!session) return <section className="workspace-content"><h1>Practice</h1><p className="workspace-muted">Sign in to practise from your study plans.</p><button type="button" className="primary-button" onClick={() => { setAuthMode('signin'); setShowAuthModal(true) }}>Log in</button></section>
+    const selectedPlan = studyPlans.find((plan) => plan.id === practicePlanId)
+    return <section className="workspace-content practice-view">
+      <div className="workspace-heading"><div><h1>Practice</h1><p className="workspace-muted">Generate a focused quiz, test, or exam from your current study plan.</p></div></div>
+      {studyPlans.length === 0 ? <div className="empty-workspace"><strong>Add a study plan first.</strong><p>Create a plan with topics before you can use practice.</p><button type="button" className="primary-button" onClick={() => openWorkspace('plans')}>Create study plan</button></div> : <>
+        <div className="practice-controls">
+          <label>Study plan<select value={practicePlanId} onChange={(event) => setPracticePlanId(event.target.value)}><option value="">Choose a plan</option>{studyPlans.map((plan) => <option key={plan.id} value={plan.id}>{plan.title} · {plan.subject}</option>)}</select></label>
+          <label>Format<select value={practiceKind} onChange={(event) => setPracticeKind(event.target.value as PracticeKind)}><option value="quiz">Quiz · 4 questions</option><option value="test">Test · 6 questions</option><option value="exam">Exam · 8 questions</option></select></label>
+          <button type="button" className="primary-button" onClick={generatePractice} disabled={practiceLoading || !practicePlanId}>{practiceLoading ? 'Preparing...' : 'Start practice'}</button>
+        </div>
+        {practiceError && <div className="workspace-error" role="alert">{practiceError}</div>}
+        {selectedPlan && !practicePacket && <p className="workspace-muted">Practice will focus on incomplete topics from {selectedPlan.title} and use current educational sources.</p>}
+        {practicePacket && <div className="practice-packet"><div className="practice-packet-header"><div><h2>{practicePacket.plan.title}</h2><p className="workspace-muted">{practicePacket.kind.toUpperCase()} · {practicePacket.plan.subject}</p></div><button type="button" className="text-button" onClick={() => { setPracticePacket(null); setPracticeChecked({}) }}>Choose another</button></div>{practicePacket.questions.map((question, index) => <article className="practice-question" key={question.id}><span className="practice-topic">Question {index + 1} · {question.topic}</span><h3>{question.prompt}</h3><textarea value={practiceAnswers[question.id] || ''} onChange={(event) => setPracticeAnswers((answers) => ({ ...answers, [question.id]: event.target.value }))} placeholder="Write your answer..." rows={3} /><button type="button" className="text-button" onClick={() => setPracticeChecked((checked) => ({ ...checked, [question.id]: !checked[question.id] }))}>{practiceChecked[question.id] ? 'Hide guidance' : 'Check guidance'}</button>{practiceChecked[question.id] && <div className="practice-guidance"><strong>Study guidance</strong><p>{question.answer}</p>{question.source && <a href={question.source} target="_blank" rel="noreferrer">Open source</a>}</div>}</article>)}</div>}
+      </>}
+    </section>
+  }
+
+  function renderSimulationView() {
+    const plan = studyPlans.find((item) => item.id === (activeProjectContext?.studyPlanId || practicePlanId))
+    const topic = plan?.study_plan_topics?.find((item) => !item.completed)?.title || plan?.subject || subject || 'your topic'
+    const steps = simulationType === 'flashcards' ? ['Recall', 'Explain', 'Apply'] : simulationType === 'science' ? ['Question', 'Observe', 'Conclude'] : simulationType === 'math' ? ['Values', 'Pattern', 'Result'] : ['Explore', 'Connect', 'Review']
+    const step = steps[simulationStep % steps.length]
+    return <section className="workspace-content simulation-view"><div className="workspace-heading"><div><h1>Simulations</h1><p className="workspace-muted">Interactive visual practice for {topic}.</p></div></div><div className="simulation-controls">{(['flashcards', 'science', 'math', 'subject'] as const).map((type) => <button type="button" key={type} className={simulationType === type ? 'simulation-choice active' : 'simulation-choice'} onClick={() => { setSimulationType(type); setSimulationStep(0) }}>{type === 'flashcards' ? 'Flashcards' : type === 'science' ? 'Science lab' : type === 'math' ? 'Math lab' : 'Subject lab'}</button>)}</div><div className={`simulation-stage simulation-${simulationType}`}><div className="simulation-orbit" aria-hidden="true"><span /><span /><span /></div><div className="simulation-stage-content"><span className="practice-topic">{step}</span><h2>{topic}</h2><p>{simulationType === 'science' ? 'Change one variable, observe the result, and explain what the evidence shows.' : simulationType === 'math' ? 'Watch the pattern change as each step moves closer to the result.' : simulationType === 'flashcards' ? 'Reveal one idea at a time, then connect it to an example.' : 'Explore the topic, make a connection, and review the key idea.'}</p><button type="button" className="primary-button" onClick={() => setSimulationStep((value) => value + 1)}>Next step</button><span className="simulation-progress">{(simulationStep % steps.length) + 1} / {steps.length}</span></div></div></section>
+  }
+
+  function renderResourcesView() {
+    const sources = practicePacket?.sources || []
+    return <section className="workspace-content"><div className="workspace-heading"><div><h1>Saved resources</h1><p className="workspace-muted">Sources from your latest practice session appear here.</p></div></div>{sources.length ? <div className="resource-list">{sources.map((source, index) => <article className="resource-item" key={`${source.title}-${index}`}><strong>{source.title}</strong><p>{source.snippet}</p>{source.source && <a href={source.source} target="_blank" rel="noreferrer">Open source</a>}</article>)}</div> : <div className="empty-workspace">Start a practice session to collect topic sources here.</div>}</section>
+  }
+
   function renderYouTubeView() {
     return <section className="workspace-content">
       <div className="workspace-heading"><div><h1>Learn with video</h1><p className="workspace-muted">Find focused lessons for a topic, project, or study plan.</p></div></div>
@@ -1455,13 +1528,13 @@ export default function Page() {
           <div className="nav-section-label">Learning</div>
           <button type="button" className={`nav-item nav-icon-item ${workspaceView === 'plans' ? 'active' : ''}`} onClick={() => openWorkspace('plans')}><Icon name="book" /> <span>Study Plans</span></button>
           <button type="button" className={`nav-item nav-icon-item ${workspaceView === 'homework' ? 'active' : ''}`} onClick={() => { setWorkspaceView('homework'); setMobileNavOpen(false) }}><Icon name="spark" /> <span>Homework Helper</span></button>
-          <button className="nav-item nav-icon-item" disabled><Icon name="spark" /> <span>Practice</span></button>
-          <button className="nav-item nav-icon-item" disabled><Icon name="spark" /> <span>Simulations</span></button>
+          <button type="button" className={`nav-item nav-icon-item ${workspaceView === 'practice' ? 'active' : ''}`} onClick={() => { setWorkspaceView('practice'); setMobileNavOpen(false) }}><Icon name="spark" /> <span>Practice</span></button>
+          <button type="button" className={`nav-item nav-icon-item ${workspaceView === 'simulations' ? 'active' : ''}`} onClick={() => { setWorkspaceView('simulations'); setMobileNavOpen(false) }}><Icon name="spark" /> <span>Simulations</span></button>
           <div className="nav-section-label">Resources</div>
           <button type="button" className={`nav-item nav-icon-item ${workspaceView === 'youtube' ? 'active' : ''}`} onClick={() => { setWorkspaceView('youtube'); setMobileNavOpen(false) }}><Icon name="book" /> <span>YouTube</span></button>
-          <button className="nav-item nav-icon-item" disabled><Icon name="book" /> <span>Wikipedia</span></button>
-          <button className="nav-item nav-icon-item" disabled><Icon name="folder" /> <span>Saved Resources</span></button>
-          <button className="nav-item nav-icon-item" disabled><Icon name="folder" /> <span>Files</span></button>
+          <button type="button" className="nav-item nav-icon-item" onClick={() => window.open(`https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(activeProjectContext?.subject || subject)}`, '_blank', 'noopener,noreferrer')}><Icon name="book" /> <span>Wikipedia</span></button>
+          <button type="button" className={`nav-item nav-icon-item ${workspaceView === 'resources' ? 'active' : ''}`} onClick={() => { setWorkspaceView('resources'); setMobileNavOpen(false) }}><Icon name="folder" /> <span>Saved Resources</span></button>
+          <button type="button" className="nav-item nav-icon-item" onClick={() => { setWorkspaceView('homework'); setMobileNavOpen(false) }}><Icon name="folder" /> <span>Files</span></button>
           <div className="nav-section-label">Personal</div>
           <button className="nav-item nav-icon-item" onClick={() => setShowStats(true)}><Icon name="home" /> <span>Progress</span></button>
           <button className="nav-item nav-icon-item" onClick={() => setShowStats(true)}><Icon name="user" /> <span>Memory</span></button>
@@ -1487,7 +1560,7 @@ export default function Page() {
       </aside>
       {mobileNavOpen && <button className="sidebar-backdrop" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />}
       <main className="main" style={{ width: '100%' }}>
-        {workspaceView !== 'chat' ? <div className="workspace-panel-shell"><button className="mobile-workspace-back" onClick={() => setWorkspaceView('chat')} aria-label="Back to chat"><Icon name="arrow-left" /> <span>Back to chat</span></button>{workspaceError && <div className="workspace-error" role="alert">{workspaceError}</div>}{workspaceView === 'projects' ? renderProjectView() : workspaceView === 'plans' ? renderPlanView() : workspaceView === 'homework' ? renderHomeworkView() : renderYouTubeView()}</div> : <div className="chat-container" style={{ width: '100%' }}>
+        {workspaceView !== 'chat' ? <div className="workspace-panel-shell"><button type="button" className="mobile-workspace-back" onClick={() => setWorkspaceView('chat')} aria-label="Back to chat"><Icon name="arrow-left" /> <span>Back to chat</span></button>{workspaceError && <div className="workspace-error" role="alert">{workspaceError}</div>}{workspaceView === 'projects' ? renderProjectView() : workspaceView === 'plans' ? renderPlanView() : workspaceView === 'homework' ? renderHomeworkView() : workspaceView === 'practice' ? renderPracticeView() : workspaceView === 'simulations' ? renderSimulationView() : workspaceView === 'resources' ? renderResourcesView() : renderYouTubeView()}</div> : <div className="chat-container" style={{ width: '100%' }}>
           <div className="chat-area">
             <div className="chat-header">
               <div className="chat-header-left">

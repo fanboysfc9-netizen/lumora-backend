@@ -99,6 +99,36 @@ html.light-theme .identity-mode { color-scheme: light; }
 .message-table th, .message-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
 .message-table th { color: var(--text); font-weight: 700; background: var(--raised); }
 .message-table tr:last-child td { border-bottom: 0; }
+.practice-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 24px 0; padding: 16px; border: 1px solid var(--border); background: var(--surface); }
+.practice-controls label { display: grid; gap: 6px; min-width: 190px; color: var(--muted); font-size: 12px; }
+.practice-controls select, .practice-question textarea { padding: 10px 12px; border: 1px solid var(--border); border-radius: 7px; background: var(--raised); color: var(--text); }
+.practice-packet { display: grid; gap: 14px; }
+.practice-packet-header { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.practice-packet-header h2 { margin: 0; }
+.practice-question { padding: 18px; border: 1px solid var(--border); background: var(--surface); }
+.practice-question h3 { margin: 8px 0 12px; font-size: 16px; }
+.practice-topic { color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.practice-question textarea { width: 100%; resize: vertical; }
+.practice-guidance { margin-top: 10px; padding: 12px; border-left: 2px solid var(--accent); background: var(--accent-soft); color: var(--muted); }
+.practice-guidance p { margin: 5px 0; }
+.practice-guidance a, .resource-item a { color: var(--accent); }
+.simulation-controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0; }
+.simulation-choice { padding: 9px 12px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); }
+.simulation-choice.active { border-color: var(--accent); color: var(--accent); }
+.simulation-stage { position: relative; display: grid; min-height: 360px; place-items: center; overflow: hidden; border: 1px solid var(--border-strong); background: var(--surface); }
+.simulation-stage-content { position: relative; z-index: 1; width: min(440px, 80%); text-align: center; }
+.simulation-stage-content h2 { margin: 10px 0 8px; font-size: 28px; }
+.simulation-stage-content p { color: var(--muted); }
+.simulation-progress { display: block; margin-top: 12px; color: var(--faint); font-size: 12px; }
+.simulation-orbit { position: absolute; width: 260px; height: 260px; border: 1px solid var(--accent-soft); border-radius: 50%; animation: simulationSpin 18s linear infinite; }
+.simulation-orbit span { position: absolute; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 6px var(--accent-soft); }
+.simulation-orbit span:nth-child(1) { top: 8px; left: 50%; }
+.simulation-orbit span:nth-child(2) { right: 16px; bottom: 36px; }
+.simulation-orbit span:nth-child(3) { bottom: 20px; left: 28px; }
+@keyframes simulationSpin { to { transform: rotate(360deg); } }
+.resource-list { display: grid; gap: 10px; }
+.resource-item { padding: 16px; border: 1px solid var(--border); background: var(--surface); }
+.resource-item p { margin: 6px 0 10px; color: var(--muted); }
 .message-break { height: 8px; }
 .dots { margin-left: 7px; color: var(--accent); letter-spacing: 3px; animation: dotPulse 1s infinite steps(3, start); }
 @keyframes dotPulse { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
