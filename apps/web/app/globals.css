@@ -112,23 +112,27 @@ html.light-theme .identity-mode { color-scheme: light; }
 .practice-guidance { margin-top: 10px; padding: 12px; border-left: 2px solid var(--accent); background: var(--accent-soft); color: var(--muted); }
 .practice-guidance p { margin: 5px 0; }
 .practice-guidance a, .resource-item a { color: var(--accent); }
-.simulation-controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0; }
-.simulation-choice { padding: 9px 12px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); }
-.simulation-choice.active { border-color: var(--accent); color: var(--accent); }
 .simulation-stage { position: relative; display: grid; min-height: 360px; place-items: center; overflow: hidden; border: 1px solid var(--border-strong); background: var(--surface); }
 .simulation-stage-content { position: relative; z-index: 1; width: min(440px, 80%); text-align: center; }
 .simulation-stage-content h2 { margin: 10px 0 8px; font-size: 28px; }
 .simulation-stage-content p { color: var(--muted); }
 .simulation-progress { display: block; margin-top: 12px; color: var(--faint); font-size: 12px; }
-.simulation-orbit { position: absolute; width: 260px; height: 260px; border: 1px solid var(--accent-soft); border-radius: 50%; animation: simulationSpin 18s linear infinite; }
-.simulation-orbit span { position: absolute; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 6px var(--accent-soft); }
-.simulation-orbit span:nth-child(1) { top: 8px; left: 50%; }
-.simulation-orbit span:nth-child(2) { right: 16px; bottom: 36px; }
-.simulation-orbit span:nth-child(3) { bottom: 20px; left: 28px; }
-@keyframes simulationSpin { to { transform: rotate(360deg); } }
 .resource-list { display: grid; gap: 10px; }
 .resource-item { padding: 16px; border: 1px solid var(--border); background: var(--surface); }
 .resource-item p { margin: 6px 0 10px; color: var(--muted); }
+.simulation-experiment { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 14px; margin-top: 24px; }
+.simulation-settings { display: grid; align-content: start; gap: 16px; padding: 16px; border: 1px solid var(--border); background: var(--surface); }
+.simulation-setting-heading { display: flex; justify-content: space-between; gap: 8px; color: var(--text); }
+.simulation-setting-heading span { color: var(--accent); font-size: 12px; }
+.simulation-settings label { display: grid; gap: 7px; color: var(--muted); font-size: 12px; }
+.simulation-settings output { justify-self: end; margin-top: -25px; color: var(--text); font-variant-numeric: tabular-nums; }
+.simulation-settings input[type="range"] { width: 100%; accent-color: var(--accent); }
+.simulation-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 4px; border-top: 1px solid var(--border); }
+.simulation-stage { min-height: 420px; }
+.physics-canvas { display: block; width: 100%; height: 100%; min-height: 420px; }
+.simulation-overlay { position: absolute; top: 14px; right: 14px; display: grid; gap: 2px; padding: 8px 10px; border: 1px solid rgba(212,179,106,.45); background: rgba(16,16,16,.72); color: #f2f0eb; font-size: 11px; }
+.simulation-overlay strong { color: #d4b36a; font-size: 13px; }
+.simulation-note { margin-top: 14px; padding: 14px; border-left: 2px solid var(--accent); color: var(--muted); background: var(--accent-soft); }
 .message-break { height: 8px; }
 .dots { margin-left: 7px; color: var(--accent); letter-spacing: 3px; animation: dotPulse 1s infinite steps(3, start); }
 @keyframes dotPulse { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }

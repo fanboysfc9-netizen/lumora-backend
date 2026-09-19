@@ -7,6 +7,7 @@ import { ApiAuthenticationError, authenticatedFetch, AuthenticationRequiredError
 import { getTimeGreeting } from '../utils/time-greeting'
 import { userScopedStorageKey } from '../utils/user-scoped-state'
 import { buildWorkspaceApiUrl, normalizeApiBaseUrl } from '../utils/api-endpoints'
+import * as THREE from 'three'
 
 type Msg = { role: 'user' | 'assistant' | 'system'; text: string; id?: string; subject?: string; mode?: string; targetId?: string }
 type Project = { id: string; title: string; description: string; subject: string; goal?: string; deadline?: string | null; status?: string; progress_percent?: number; created_at?: string; updated_at?: string }
@@ -19,6 +20,99 @@ type PendingAttachment = { file: File; previewUrl: string | null; kind: 'image' 
 type PracticeKind = 'test' | 'quiz' | 'exam'
 type PracticeQuestion = { id: string; topic: string; prompt: string; answer: string; source?: string }
 type PracticePacket = { plan: { id: string; title: string; subject: string }; kind: PracticeKind; questions: PracticeQuestion[]; sources: Array<{ title: string; snippet: string; source?: string }> }
+
+function PhysicsSimulationCanvas({ acceleration, initialVelocity, mass, gravity, playing, resetToken }: { acceleration: number; initialVelocity: number; mass: number; gravity: number; playing: boolean; resetToken: number }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color('#111315')
+    const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100)
+    camera.position.set(5.5, 3.7, 8)
+    camera.lookAt(0, 1.1, 0)
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false })
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    renderer.shadowMap.enabled = true
+    const resize = () => {
+      const width = canvas.clientWidth || 640
+      const height = canvas.clientHeight || 360
+      renderer.setSize(width, height, false)
+      camera.aspect = width / height
+      camera.updateProjectionMatrix()
+    }
+    resize()
+    const resizeObserver = new ResizeObserver(resize)
+    resizeObserver.observe(canvas)
+
+    scene.add(new THREE.HemisphereLight('#dce8ff', '#252016', 2.1))
+    const keyLight = new THREE.DirectionalLight('#fff4d8', 3)
+    keyLight.position.set(4, 7, 5)
+    keyLight.castShadow = true
+    scene.add(keyLight)
+
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(14, 8), new THREE.MeshStandardMaterial({ color: '#25292c', roughness: .82, metalness: .08 }))
+    ground.rotation.x = -Math.PI / 2
+    ground.receiveShadow = true
+    scene.add(ground)
+    const grid = new THREE.GridHelper(14, 14, '#69716f', '#343a3b')
+    grid.position.y = .012
+    scene.add(grid)
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(.34, 32, 20), new THREE.MeshStandardMaterial({ color: '#d4b36a', roughness: .28, metalness: .18 }))
+    ball.castShadow = true
+    ball.position.set(-4.8, .34, 0)
+    scene.add(ball)
+    const marker = new THREE.Mesh(new THREE.RingGeometry(.38, .43, 32), new THREE.MeshBasicMaterial({ color: '#d4b36a', transparent: true, opacity: .42, side: THREE.DoubleSide }))
+    marker.rotation.x = -Math.PI / 2
+    marker.position.y = .02
+    scene.add(marker)
+
+    let position = 0
+    let height = 0
+    let velocity = initialVelocity
+    let verticalVelocity = Math.max(1.5, initialVelocity * .12)
+    let last = performance.now()
+    let frame = 0
+    const animate = (now: number) => {
+      const delta = Math.min((now - last) / 1000, .04)
+      last = now
+      if (playing) {
+        velocity += acceleration * delta
+        position += velocity * delta
+        verticalVelocity -= gravity * delta
+        height += verticalVelocity * delta
+        if (height <= 0) {
+          height = 0
+          verticalVelocity = Math.max(1.5, Math.abs(velocity) * .08 / Math.max(mass, .1))
+        }
+        if (position > 9) { position = -4.8; velocity = initialVelocity }
+      }
+      ball.position.x = -4.8 + position
+      ball.position.y = .34 + height
+      const scale = .82 + mass * .045
+      ball.scale.setScalar(scale)
+      marker.position.x = ball.position.x
+      ball.rotation.z += delta * (velocity * .5)
+      renderer.render(scene, camera)
+      frame = requestAnimationFrame(animate)
+    }
+    frame = requestAnimationFrame(animate)
+    return () => {
+      cancelAnimationFrame(frame)
+      resizeObserver.disconnect()
+      renderer.dispose()
+      scene.traverse((object) => {
+        const mesh = object as THREE.Mesh
+        if (mesh.geometry) mesh.geometry.dispose()
+        if (Array.isArray(mesh.material)) mesh.material.forEach((material) => material.dispose())
+        else if (mesh.material) mesh.material.dispose()
+      })
+    }
+  }, [acceleration, initialVelocity, mass, gravity, playing, resetToken])
+
+  return <canvas ref={canvasRef} className="physics-canvas" aria-label="Interactive ball acceleration simulation" />
+}
 
 type TutorName = 'Nira' | 'Elara' | 'Solara'
 
@@ -175,8 +269,12 @@ export default function Page() {
   const [practiceError, setPracticeError] = useState<string | null>(null)
   const [practiceAnswers, setPracticeAnswers] = useState<Record<string, string>>({})
   const [practiceChecked, setPracticeChecked] = useState<Record<string, boolean>>({})
-  const [simulationType, setSimulationType] = useState<'flashcards' | 'science' | 'math' | 'subject'>('flashcards')
-  const [simulationStep, setSimulationStep] = useState(0)
+  const [simulationPlaying, setSimulationPlaying] = useState(false)
+  const [simulationResetToken, setSimulationResetToken] = useState(0)
+  const [simulationAcceleration, setSimulationAcceleration] = useState(2)
+  const [simulationVelocity, setSimulationVelocity] = useState(2)
+  const [simulationMass, setSimulationMass] = useState(1)
+  const [simulationGravity, setSimulationGravity] = useState(9.8)
 
   const defaultStats = { totalMessages: 0, responses: 0, understood: 0, subjects: {} as Record<string, { messages: number; understood: number }> }
   const [stats, setStats] = useState(() => defaultStats)
@@ -1462,9 +1560,7 @@ export default function Page() {
   function renderSimulationView() {
     const plan = studyPlans.find((item) => item.id === (activeProjectContext?.studyPlanId || practicePlanId))
     const topic = plan?.study_plan_topics?.find((item) => !item.completed)?.title || plan?.subject || subject || 'your topic'
-    const steps = simulationType === 'flashcards' ? ['Recall', 'Explain', 'Apply'] : simulationType === 'science' ? ['Question', 'Observe', 'Conclude'] : simulationType === 'math' ? ['Values', 'Pattern', 'Result'] : ['Explore', 'Connect', 'Review']
-    const step = steps[simulationStep % steps.length]
-    return <section className="workspace-content simulation-view"><div className="workspace-heading"><div><h1>Simulations</h1><p className="workspace-muted">Interactive visual practice for {topic}.</p></div></div><div className="simulation-controls">{(['flashcards', 'science', 'math', 'subject'] as const).map((type) => <button type="button" key={type} className={simulationType === type ? 'simulation-choice active' : 'simulation-choice'} onClick={() => { setSimulationType(type); setSimulationStep(0) }}>{type === 'flashcards' ? 'Flashcards' : type === 'science' ? 'Science lab' : type === 'math' ? 'Math lab' : 'Subject lab'}</button>)}</div><div className={`simulation-stage simulation-${simulationType}`}><div className="simulation-orbit" aria-hidden="true"><span /><span /><span /></div><div className="simulation-stage-content"><span className="practice-topic">{step}</span><h2>{topic}</h2><p>{simulationType === 'science' ? 'Change one variable, observe the result, and explain what the evidence shows.' : simulationType === 'math' ? 'Watch the pattern change as each step moves closer to the result.' : simulationType === 'flashcards' ? 'Reveal one idea at a time, then connect it to an example.' : 'Explore the topic, make a connection, and review the key idea.'}</p><button type="button" className="primary-button" onClick={() => setSimulationStep((value) => value + 1)}>Next step</button><span className="simulation-progress">{(simulationStep % steps.length) + 1} / {steps.length}</span></div></div></section>
+    return <section className="workspace-content simulation-view"><div className="workspace-heading"><div><h1>Interactive physics lab</h1><p className="workspace-muted">Explore how acceleration changes a ball's motion{topic ? ` while studying ${topic}` : ''}.</p></div></div><div className="simulation-experiment"><div className="simulation-settings"><div className="simulation-setting-heading"><strong>Experiment controls</strong><span>{simulationPlaying ? 'Running' : 'Paused'}</span></div><label>Acceleration <output>{simulationAcceleration.toFixed(1)} m/s²</output><input type="range" min="-4" max="8" step="0.1" value={simulationAcceleration} onChange={(event) => setSimulationAcceleration(Number(event.target.value))} /></label><label>Initial velocity <output>{simulationVelocity.toFixed(1)} m/s</output><input type="range" min="0" max="8" step="0.1" value={simulationVelocity} onChange={(event) => setSimulationVelocity(Number(event.target.value))} /></label><label>Mass <output>{simulationMass.toFixed(1)} kg</output><input type="range" min="0.2" max="5" step="0.1" value={simulationMass} onChange={(event) => setSimulationMass(Number(event.target.value))} /></label><label>Gravity <output>{simulationGravity.toFixed(1)} m/s²</output><input type="range" min="0" max="20" step="0.1" value={simulationGravity} onChange={(event) => setSimulationGravity(Number(event.target.value))} /></label><div className="simulation-actions"><button type="button" className="primary-button" onClick={() => setSimulationPlaying((value) => !value)}>{simulationPlaying ? 'Pause' : 'Play'}</button><button type="button" className="text-button" onClick={() => { setSimulationPlaying(false); setSimulationResetToken((value) => value + 1) }}>Reset</button></div></div><div className="simulation-stage"><PhysicsSimulationCanvas acceleration={simulationAcceleration} initialVelocity={simulationVelocity} mass={simulationMass} gravity={simulationGravity} playing={simulationPlaying} resetToken={simulationResetToken} /><div className="simulation-overlay"><span>Ball motion</span><strong>{simulationPlaying ? 'Live' : 'Ready'}</strong></div></div></div><div className="simulation-note"><strong>What to notice:</strong> increasing acceleration changes horizontal speed; gravity changes the bounce timing; mass changes the ball scale and bounce response.</div></section>
   }
 
   function renderResourcesView() {
