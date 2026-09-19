@@ -27,6 +27,45 @@ function PhysicsSimulationCanvas({ acceleration, initialVelocity, mass, gravity,
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
+    const webglContext = canvas.getContext('webgl') || canvas.getContext('experimental-webgl')
+    if (!webglContext) {
+      const context = canvas.getContext('2d')
+      if (!context) return
+      let position = 0
+      let velocity = initialVelocity
+      let height = 0
+      let verticalVelocity = Math.max(1.5, initialVelocity * .12)
+      let last = performance.now()
+      let frame = 0
+      const draw = (now: number) => {
+        const delta = Math.min((now - last) / 1000, .04)
+        last = now
+        if (playing) {
+          velocity += acceleration * delta
+          position += velocity * delta
+          verticalVelocity -= gravity * delta
+          height += verticalVelocity * delta
+          if (height <= 0) { height = 0; verticalVelocity = Math.max(1.5, Math.abs(velocity) * .08 / Math.max(mass, .1)) }
+          if (position > 9) { position = -4.8; velocity = initialVelocity }
+        }
+        const width = canvas.clientWidth || 640
+        const heightPx = canvas.clientHeight || 360
+        canvas.width = width * Math.min(window.devicePixelRatio, 2)
+        canvas.height = heightPx * Math.min(window.devicePixelRatio, 2)
+        context.setTransform(Math.min(window.devicePixelRatio, 2), 0, 0, Math.min(window.devicePixelRatio, 2), 0, 0)
+        context.fillStyle = '#111315'; context.fillRect(0, 0, width, heightPx)
+        context.strokeStyle = '#343a3b'; context.lineWidth = 1
+        for (let x = 0; x < width; x += 32) { context.beginPath(); context.moveTo(x, heightPx - 42); context.lineTo(x, heightPx); context.stroke() }
+        context.beginPath(); context.moveTo(0, heightPx - 42); context.lineTo(width, heightPx - 42); context.stroke()
+        const x = width * .12 + (position / 9) * width * .76
+        const y = heightPx - 42 - height * 18
+        context.fillStyle = '#d4b36a'; context.beginPath(); context.arc(x, y, 18 + mass * 2, 0, Math.PI * 2); context.fill()
+        context.fillStyle = '#f2f0eb'; context.font = '12px sans-serif'; context.fillText('WebGL fallback · 2D physics view', 16, 22)
+        frame = requestAnimationFrame(draw)
+      }
+      frame = requestAnimationFrame(draw)
+      return () => cancelAnimationFrame(frame)
+    }
     const scene = new THREE.Scene()
     scene.background = new THREE.Color('#111315')
     const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100)
@@ -117,12 +156,39 @@ function PhysicsSimulationCanvas({ acceleration, initialVelocity, mass, gravity,
 const ELEMENTS = `Hydrogen|H|1|1.008|nonmetal|1;Helium|He|2|4.003|noble gas|2;Lithium|Li|3|6.94|alkali metal|2,1;Beryllium|Be|4|9.012|alkaline earth|2,2;Boron|B|5|10.81|metalloid|2,3;Carbon|C|6|12.011|nonmetal|2,4;Nitrogen|N|7|14.007|nonmetal|2,5;Oxygen|O|8|15.999|nonmetal|2,6;Fluorine|F|9|18.998|halogen|2,7;Neon|Ne|10|20.18|noble gas|2,8;Sodium|Na|11|22.99|alkali metal|2,8,1;Magnesium|Mg|12|24.305|alkaline earth|2,8,2;Aluminium|Al|13|26.982|post-transition|2,8,3;Silicon|Si|14|28.085|metalloid|2,8,4;Phosphorus|P|15|30.974|nonmetal|2,8,5;Sulfur|S|16|32.06|nonmetal|2,8,6;Chlorine|Cl|17|35.45|halogen|2,8,7;Argon|Ar|18|39.948|noble gas|2,8,8;Potassium|K|19|39.098|alkali metal|2,8,8,1;Calcium|Ca|20|40.078|alkaline earth|2,8,8,2;Scandium|Sc|21|44.956|transition metal|2,8,9,2;Titanium|Ti|22|47.867|transition metal|2,8,10,2;Vanadium|V|23|50.942|transition metal|2,8,11,2;Chromium|Cr|24|51.996|transition metal|2,8,13,1;Manganese|Mn|25|54.938|transition metal|2,8,13,2;Iron|Fe|26|55.845|transition metal|2,8,14,2;Cobalt|Co|27|58.933|transition metal|2,8,15,2;Nickel|Ni|28|58.693|transition metal|2,8,16,2;Copper|Cu|29|63.546|transition metal|2,8,18,1;Zinc|Zn|30|65.38|transition metal|2,8,18,2;Gallium|Ga|31|69.723|post-transition|2,8,18,3;Germanium|Ge|32|72.63|metalloid|2,8,18,4;Arsenic|As|33|74.922|metalloid|2,8,18,5;Selenium|Se|34|78.971|nonmetal|2,8,18,6;Bromine|Br|35|79.904|halogen|2,8,18,7;Krypton|Kr|36|83.798|noble gas|2,8,18,8;Rubidium|Rb|37|85.468|alkali metal|2,8,18,8,1;Strontium|Sr|38|87.62|alkaline earth|2,8,18,8,2;Yttrium|Y|39|88.906|transition metal|2,8,18,9,2;Zirconium|Zr|40|91.224|transition metal|2,8,18,10,2;Niobium|Nb|41|92.906|transition metal|2,8,18,12,1;Molybdenum|Mo|42|95.95|transition metal|2,8,18,13,1;Technetium|Tc|43|98|transition metal|2,8,18,13,2;Ruthenium|Ru|44|101.07|transition metal|2,8,18,15,1;Rhodium|Rh|45|102.91|transition metal|2,8,18,16,1;Palladium|Pd|46|106.42|transition metal|2,8,18,18;Silver|Ag|47|107.87|transition metal|2,8,18,18,1;Cadmium|Cd|48|112.41|transition metal|2,8,18,18,2;Indium|In|49|114.82|post-transition|2,8,18,18,3;Tin|Sn|50|118.71|post-transition|2,8,18,18,4;Antimony|Sb|51|121.76|metalloid|2,8,18,18,5;Tellurium|Te|52|127.6|metalloid|2,8,18,18,6;Iodine|I|53|126.9|halogen|2,8,18,18,7;Xenon|Xe|54|131.29|noble gas|2,8,18,18,8;Caesium|Cs|55|132.91|alkali metal|2,8,18,18,8,1;Barium|Ba|56|137.33|alkaline earth|2,8,18,18,8,2;Lanthanum|La|57|138.91|lanthanide|2,8,18,18,9,2;Cerium|Ce|58|140.12|lanthanide|2,8,18,19,9,2;Praseodymium|Pr|59|140.91|lanthanide|2,8,18,21,8,2;Neodymium|Nd|60|144.24|lanthanide|2,8,18,22,8,2;Promethium|Pm|61|145|lanthanide|2,8,18,23,8,2;Samarium|Sm|62|150.36|lanthanide|2,8,18,24,8,2;Europium|Eu|63|151.96|lanthanide|2,8,18,25,8,2;Gadolinium|Gd|64|157.25|lanthanide|2,8,18,25,9,2;Terbium|Tb|65|158.93|lanthanide|2,8,18,27,8,2;Dysprosium|Dy|66|162.5|lanthanide|2,8,18,28,8,2;Holmium|Ho|67|164.93|lanthanide|2,8,18,29,8,2;Erbium|Er|68|167.26|lanthanide|2,8,18,30,8,2;Thulium|Tm|69|168.93|lanthanide|2,8,18,31,8,2;Ytterbium|Yb|70|173.05|lanthanide|2,8,18,32,8,2;Lutetium|Lu|71|174.97|lanthanide|2,8,18,32,9,2;Hafnium|Hf|72|178.49|transition metal|2,8,18,32,10,2;Tantalum|Ta|73|180.95|transition metal|2,8,18,32,11,2;Tungsten|W|74|183.84|transition metal|2,8,18,32,12,2;Rhenium|Re|75|186.21|transition metal|2,8,18,32,13,2;Osmium|Os|76|190.23|transition metal|2,8,18,32,14,2;Iridium|Ir|77|192.22|transition metal|2,8,18,32,15,2;Platinum|Pt|78|195.08|transition metal|2,8,18,32,17,1;Gold|Au|79|196.97|transition metal|2,8,18,32,18,1;Mercury|Hg|80|200.59|transition metal|2,8,18,32,18,2;Thallium|Tl|81|204.38|post-transition|2,8,18,32,18,3;Lead|Pb|82|207.2|post-transition|2,8,18,32,18,4;Bismuth|Bi|83|208.98|post-transition|2,8,18,32,18,5;Polonium|Po|84|209|post-transition|2,8,18,32,18,6;Astatine|At|85|210|halogen|2,8,18,32,18,7;Radon|Rn|86|222|noble gas|2,8,18,32,18,8;Francium|Fr|87|223|alkali metal|2,8,18,32,18,8,1;Radium|Ra|88|226|alkaline earth|2,8,18,32,18,8,2;Actinium|Ac|89|227|actinide|2,8,18,32,18,9,2;Thorium|Th|90|232.04|actinide|2,8,18,32,18,10,2;Protactinium|Pa|91|231.04|actinide|2,8,18,32,20,9,2;Uranium|U|92|238.03|actinide|2,8,18,32,21,9,2;Neptunium|Np|93|237|actinide|2,8,18,32,22,9,2;Plutonium|Pu|94|244|actinide|2,8,18,32,24,8,2;Americium|Am|95|243|actinide|2,8,18,32,25,8,2;Curium|Cm|96|247|actinide|2,8,18,32,25,9,2;Berkelium|Bk|97|247|actinide|2,8,18,32,27,8,2;Californium|Cf|98|251|actinide|2,8,18,32,28,8,2;Einsteinium|Es|99|252|actinide|2,8,18,32,29,8,2;Fermium|Fm|100|257|actinide|2,8,18,32,30,8,2;Mendelevium|Md|101|258|actinide|2,8,18,32,31,8,2;Nobelium|No|102|259|actinide|2,8,18,32,32,8,2;Lawrencium|Lr|103|266|actinide|2,8,18,32,32,8,3;Rutherfordium|Rf|104|267|transition metal|2,8,18,32,32,10,2;Dubnium|Db|105|268|transition metal|2,8,18,32,32,11,2;Seaborgium|Sg|106|269|transition metal|2,8,18,32,32,12,2;Bohrium|Bh|107|270|transition metal|2,8,18,32,32,13,2;Hassium|Hs|108|277|transition metal|2,8,18,32,32,14,2;Meitnerium|Mt|109|278|transition metal|2,8,18,32,32,15,2;Darmstadtium|Ds|110|281|transition metal|2,8,18,32,32,17,1;Roentgenium|Rg|111|282|transition metal|2,8,18,32,32,18,1;Copernicium|Cn|112|285|transition metal|2,8,18,32,32,18,2;Nihonium|Nh|113|286|post-transition|2,8,18,32,32,18,3;Flerovium|Fl|114|289|post-transition|2,8,18,32,32,18,4;Moscovium|Mc|115|290|post-transition|2,8,18,32,32,18,5;Livermorium|Lv|116|293|post-transition|2,8,18,32,32,18,6;Tennessine|Ts|117|294|halogen|2,8,18,32,32,18,7;Oganesson|Og|118|294|noble gas|2,8,18,32,32,18,8`.split(';').map((entry) => { const [name, symbol, atomicNumber, atomicMass, category, shells] = entry.split('|'); return { name, symbol, atomicNumber: Number(atomicNumber), atomicMass, category, shells: shells.split(',').map(Number) } })
 
 const MOLECULES = [{ name: 'Water', formula: 'H₂O', atoms: ['H', 'O', 'H'] }, { name: 'Carbon dioxide', formula: 'CO₂', atoms: ['O', 'C', 'O'] }, { name: 'Methane', formula: 'CH₄', atoms: ['H', 'C', 'H', 'H', 'H'] }, { name: 'Ammonia', formula: 'NH₃', atoms: ['H', 'N', 'H', 'H'] }]
+const PHYSICS_TOPICS = [{ id: 'motion', title: 'Laws of motion', description: 'Change force, mass, acceleration, and gravity to observe motion.', practical: 'Compare how the same force changes objects with different masses.' }, { id: 'electricity', title: 'Electricity', description: 'Explore voltage, resistance, current, and power in a simple circuit.', practical: 'Raise resistance and observe how current changes.' }, { id: 'magnetism', title: 'Magnetism', description: 'Inspect magnetic field strength, distance, and direction.', practical: 'Move a magnet near a field sensor and map the field.' }, { id: 'waves', title: 'Waves', description: 'Adjust frequency, amplitude, and damping to study wave motion.', practical: 'Double frequency and compare wavelength and energy.' }]
+const CHEMISTRY_TOPICS = [{ id: 'atomic', title: 'Atomic structure', description: 'Inspect nuclei, electron shells, and periodic patterns.', practical: 'Compare shell populations across a period.' }, { id: 'bonding', title: 'Chemical bonding', description: 'Explore how atoms share or transfer electrons.', practical: 'Compare ionic and covalent bonding using molecule models.' }, { id: 'molecules', title: 'Molecular geometry', description: 'Rotate molecules and compare shapes, bonds, and polarity.', practical: 'Compare linear carbon dioxide with bent water.' }, { id: 'reactions', title: 'Reaction lab', description: 'Model reactants, products, energy, and conservation of atoms.', practical: 'Balance a reaction by changing coefficients, not atoms.' }]
 
 function AtomSimulationCanvas({ element, playing, resetToken }: { element: typeof ELEMENTS[number]; playing: boolean; resetToken: number }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
+    const webglContext = canvas.getContext('webgl') || canvas.getContext('experimental-webgl')
+    if (!webglContext) {
+      const context = canvas.getContext('2d')
+      if (!context) return
+      let rotation = 0
+      let frame = 0
+      const draw = () => {
+        const width = canvas.clientWidth || 640
+        const height = canvas.clientHeight || 420
+        const pixelRatio = Math.min(window.devicePixelRatio, 2)
+        canvas.width = width * pixelRatio; canvas.height = height * pixelRatio
+        context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
+        context.fillStyle = '#111315'; context.fillRect(0, 0, width, height)
+        const centerX = width / 2; const centerY = height / 2
+        context.strokeStyle = '#7488a7'; context.lineWidth = 1
+        element.shells.forEach((_, index) => { context.beginPath(); context.ellipse(centerX, centerY, 42 + index * 28, 24 + index * 18, index * .12, 0, Math.PI * 2); context.stroke() })
+        context.fillStyle = '#db725c'; context.beginPath(); context.arc(centerX, centerY, 28, 0, Math.PI * 2); context.fill()
+        element.shells.forEach((count, shellIndex) => { for (let index = 0; index < count; index++) { const angle = index / count * Math.PI * 2 + rotation * (.5 + shellIndex * .08); const radiusX = 42 + shellIndex * 28; const radiusY = 24 + shellIndex * 18; context.fillStyle = '#d4b36a'; context.beginPath(); context.arc(centerX + Math.cos(angle) * radiusX, centerY + Math.sin(angle) * radiusY, 4, 0, Math.PI * 2); context.fill() } })
+        context.fillStyle = '#f2f0eb'; context.font = '12px sans-serif'; context.fillText(`${element.name} · ${element.symbol} · ${element.atomicNumber} electrons`, 16, 22)
+        if (playing) rotation += .015
+        frame = requestAnimationFrame(draw)
+      }
+      frame = requestAnimationFrame(draw)
+      return () => cancelAnimationFrame(frame)
+    }
     const scene = new THREE.Scene()
     scene.background = new THREE.Color('#111315')
     const camera = new THREE.PerspectiveCamera(38, 1, .1, 100)
@@ -159,6 +225,31 @@ function MoleculeSimulationCanvas({ molecule, playing }: { molecule: typeof MOLE
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
+    const webglContext = canvas.getContext('webgl') || canvas.getContext('experimental-webgl')
+    if (!webglContext) {
+      const context = canvas.getContext('2d')
+      if (!context) return
+      let rotation = 0
+      let frame = 0
+      const draw = () => {
+        const width = canvas.clientWidth || 640
+        const height = canvas.clientHeight || 300
+        const pixelRatio = Math.min(window.devicePixelRatio, 2)
+        canvas.width = width * pixelRatio; canvas.height = height * pixelRatio
+        context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
+        context.fillStyle = '#101416'; context.fillRect(0, 0, width, height)
+        const positions = molecule.atoms.length === 3 ? [[-80, 0], [0, 0], [80, 0]] : molecule.atoms.length === 4 ? [[-70, 0], [0, 0], [70, 0], [0, -70]] : [[-80, 0], [0, 0], [80, 0], [0, -70], [0, 70]]
+        const centerX = width / 2; const centerY = height / 2
+        const colors: Record<string, string> = { H: '#f2f2f2', C: '#4e5962', O: '#d86658', N: '#668bdd' }
+        positions.slice(1).forEach((position) => { context.strokeStyle = '#aeb8bd'; context.lineWidth = 7; context.beginPath(); context.moveTo(centerX, centerY); context.lineTo(centerX + position[0] * Math.cos(rotation) - position[1] * Math.sin(rotation), centerY + position[0] * Math.sin(rotation) + position[1] * Math.cos(rotation)); context.stroke() })
+        molecule.atoms.forEach((symbol, index) => { const position = positions[index]; const x = centerX + position[0] * Math.cos(rotation) - position[1] * Math.sin(rotation); const y = centerY + position[0] * Math.sin(rotation) + position[1] * Math.cos(rotation); context.fillStyle = colors[symbol] || '#c99555'; context.beginPath(); context.arc(x, y, symbol === 'H' ? 16 : 24, 0, Math.PI * 2); context.fill(); context.fillStyle = symbol === 'H' ? '#161616' : '#fff'; context.font = 'bold 12px sans-serif'; context.textAlign = 'center'; context.fillText(symbol, x, y + 4) })
+        context.textAlign = 'left'; context.fillStyle = '#f2f0eb'; context.font = '12px sans-serif'; context.fillText(`${molecule.name} · ${molecule.formula}`, 16, 22)
+        if (playing) rotation += .006
+        frame = requestAnimationFrame(draw)
+      }
+      frame = requestAnimationFrame(draw)
+      return () => cancelAnimationFrame(frame)
+    }
     const scene = new THREE.Scene()
     scene.background = new THREE.Color('#101416')
     const camera = new THREE.PerspectiveCamera(40, 1, .1, 100)
@@ -346,6 +437,7 @@ export default function Page() {
   const [simulationMass, setSimulationMass] = useState(1)
   const [simulationGravity, setSimulationGravity] = useState(9.8)
   const [simulationLab, setSimulationLab] = useState<'physics' | 'chemistry'>('physics')
+  const [selectedLabTopic, setSelectedLabTopic] = useState('motion')
   const [selectedElementNumber, setSelectedElementNumber] = useState(1)
   const [selectedMolecule, setSelectedMolecule] = useState(0)
   const [atomPlaying, setAtomPlaying] = useState(true)
@@ -1634,10 +1726,14 @@ export default function Page() {
   function renderSimulationView() {
     const plan = studyPlans.find((item) => item.id === (activeProjectContext?.studyPlanId || practicePlanId))
     const topic = plan?.study_plan_topics?.find((item) => !item.completed)?.title || plan?.subject || subject || 'your topic'
+    const labTopics = simulationLab === 'physics' ? PHYSICS_TOPICS : CHEMISTRY_TOPICS
+    const selectedTopic = labTopics.find((item) => item.id === selectedLabTopic) || labTopics[0]
+    const selectTopic = (id: string) => setSelectedLabTopic(id)
     const element = ELEMENTS[selectedElementNumber - 1]
     const molecule = MOLECULES[selectedMolecule]
-    if (simulationLab === 'chemistry') return <section className="workspace-content simulation-view"><div className="workspace-heading"><div><h1>Chemistry molecular lab</h1><p className="workspace-muted">Explore every element, electron shells, and common molecular structures in 3D.</p></div></div><div className="lab-switcher"><button type="button" className="simulation-choice" onClick={() => setSimulationLab('physics')}>Physics lab</button><button type="button" className="simulation-choice active">Chemistry lab</button></div><div className="chemistry-layout"><div className="simulation-settings"><div className="simulation-setting-heading"><strong>Periodic table</strong><span>118 elements</span></div><label>Element<select value={selectedElementNumber} onChange={(event) => setSelectedElementNumber(Number(event.target.value))}>{ELEMENTS.map((item) => <option key={item.atomicNumber} value={item.atomicNumber}>{item.atomicNumber}. {item.name} ({item.symbol})</option>)}</select></label><div className="element-facts"><strong>{element.name} · {element.symbol}</strong><span>Atomic number {element.atomicNumber}</span><span>Mass {element.atomicMass}</span><span>{element.category}</span><span>Shells {element.shells.join(' · ')}</span></div><label>Molecule<select value={selectedMolecule} onChange={(event) => setSelectedMolecule(Number(event.target.value))}>{MOLECULES.map((item, index) => <option key={item.formula} value={index}>{item.name} · {item.formula}</option>)}</select></label><button type="button" className="primary-button" onClick={() => setAtomPlaying((value) => !value)}>{atomPlaying ? 'Pause electrons' : 'Animate electrons'}</button></div><div className="chemistry-canvases"><div className="simulation-stage"><AtomSimulationCanvas element={element} playing={atomPlaying} resetToken={simulationResetToken} /><div className="simulation-overlay"><span>{element.name}</span><strong>{element.symbol}</strong></div></div><div className="simulation-stage"><MoleculeSimulationCanvas molecule={molecule} playing={atomPlaying} /><div className="simulation-overlay"><span>{molecule.name}</span><strong>{molecule.formula}</strong></div></div></div></div><div className="molecule-card"><strong>{molecule.name} · {molecule.formula}</strong><span>Atoms: {molecule.atoms.join(' · ')}</span><p>Use the element selector to inspect atomic structure, then compare how atoms combine in common molecules.</p></div></section>
-    return <section className="workspace-content simulation-view"><div className="workspace-heading"><div><h1>Interactive physics lab</h1><p className="workspace-muted">Explore how acceleration changes a ball's motion{topic ? ` while studying ${topic}` : ''}.</p></div></div><div className="lab-switcher"><button type="button" className="simulation-choice active">Physics lab</button><button type="button" className="simulation-choice" onClick={() => setSimulationLab('chemistry')}>Chemistry lab</button></div><div className="simulation-experiment"><div className="simulation-settings"><div className="simulation-setting-heading"><strong>Experiment controls</strong><span>{simulationPlaying ? 'Running' : 'Paused'}</span></div><label>Acceleration <output>{simulationAcceleration.toFixed(1)} m/s²</output><input type="range" min="-4" max="8" step="0.1" value={simulationAcceleration} onChange={(event) => setSimulationAcceleration(Number(event.target.value))} /></label><label>Initial velocity <output>{simulationVelocity.toFixed(1)} m/s</output><input type="range" min="0" max="8" step="0.1" value={simulationVelocity} onChange={(event) => setSimulationVelocity(Number(event.target.value))} /></label><label>Mass <output>{simulationMass.toFixed(1)} kg</output><input type="range" min="0.2" max="5" step="0.1" value={simulationMass} onChange={(event) => setSimulationMass(Number(event.target.value))} /></label><label>Gravity <output>{simulationGravity.toFixed(1)} m/s²</output><input type="range" min="0" max="20" step="0.1" value={simulationGravity} onChange={(event) => setSimulationGravity(Number(event.target.value))} /></label><div className="simulation-actions"><button type="button" className="primary-button" onClick={() => setSimulationPlaying((value) => !value)}>{simulationPlaying ? 'Pause' : 'Play'}</button><button type="button" className="text-button" onClick={() => { setSimulationPlaying(false); setSimulationResetToken((value) => value + 1) }}>Reset</button></div></div><div className="simulation-stage"><PhysicsSimulationCanvas acceleration={simulationAcceleration} initialVelocity={simulationVelocity} mass={simulationMass} gravity={simulationGravity} playing={simulationPlaying} resetToken={simulationResetToken} /><div className="simulation-overlay"><span>Ball motion</span><strong>{simulationPlaying ? 'Live' : 'Ready'}</strong></div></div></div><div className="simulation-note"><strong>What to notice:</strong> increasing acceleration changes horizontal speed; gravity changes the bounce timing; mass changes the ball scale and bounce response.</div></section>
+    const topicPicker = <div className="lab-topic-grid">{labTopics.map((item) => <button type="button" key={item.id} className={selectedTopic.id === item.id ? 'lab-topic active' : 'lab-topic'} onClick={() => selectTopic(item.id)}><strong>{item.title}</strong><span>{item.description}</span></button>)}</div>
+    if (simulationLab === 'chemistry') return <section className="workspace-content simulation-view"><div className="workspace-heading"><div><h1>{selectedTopic.title}</h1><p className="workspace-muted">{selectedTopic.description}</p></div></div>{topicPicker}<div className="lab-switcher"><button type="button" className="simulation-choice" onClick={() => { setSimulationLab('physics'); setSelectedLabTopic('motion') }}>Physics lab</button><button type="button" className="simulation-choice active">Chemistry lab</button></div><div className="chemistry-layout"><div className="simulation-settings"><div className="simulation-setting-heading"><strong>Periodic table</strong><span>118 elements</span></div><label>Element<select value={selectedElementNumber} onChange={(event) => setSelectedElementNumber(Number(event.target.value))}>{ELEMENTS.map((item) => <option key={item.atomicNumber} value={item.atomicNumber}>{item.atomicNumber}. {item.name} ({item.symbol})</option>)}</select></label><div className="element-facts"><strong>{element.name} · {element.symbol}</strong><span>Atomic number {element.atomicNumber}</span><span>Mass {element.atomicMass}</span><span>{element.category}</span><span>Shells {element.shells.join(' · ')}</span></div><label>Molecule<select value={selectedMolecule} onChange={(event) => setSelectedMolecule(Number(event.target.value))}>{MOLECULES.map((item, index) => <option key={item.formula} value={index}>{item.name} · {item.formula}</option>)}</select></label><button type="button" className="primary-button" onClick={() => setAtomPlaying((value) => !value)}>{atomPlaying ? 'Pause electrons' : 'Animate electrons'}</button></div><div className="chemistry-canvases"><div className="simulation-stage"><AtomSimulationCanvas element={element} playing={atomPlaying} resetToken={simulationResetToken} /><div className="simulation-overlay"><span>{element.name}</span><strong>{element.symbol}</strong></div></div><div className="simulation-stage"><MoleculeSimulationCanvas molecule={molecule} playing={atomPlaying} /><div className="simulation-overlay"><span>{molecule.name}</span><strong>{molecule.formula}</strong></div></div></div></div><div className="molecule-card"><strong>{molecule.name} · {molecule.formula}</strong><span>Atoms: {molecule.atoms.join(' · ')}</span><p>{selectedTopic.practical} Use the element selector to inspect atomic structure, then compare how atoms combine in common molecules.</p></div></section>
+    return <section className="workspace-content simulation-view"><div className="workspace-heading"><div><h1>{selectedTopic.title}</h1><p className="workspace-muted">{selectedTopic.description}{topic ? ` Current learning context: ${topic}.` : ''}</p></div></div>{topicPicker}<div className="lab-switcher"><button type="button" className="simulation-choice active">Physics lab</button><button type="button" className="simulation-choice" onClick={() => { setSimulationLab('chemistry'); setSelectedLabTopic('atomic') }}>Chemistry lab</button></div><div className="simulation-experiment"><div className="simulation-settings"><div className="simulation-setting-heading"><strong>Experiment controls</strong><span>{simulationPlaying ? 'Running' : 'Paused'}</span></div><label>Acceleration <output>{simulationAcceleration.toFixed(1)} m/s²</output><input type="range" min="-4" max="8" step="0.1" value={simulationAcceleration} onChange={(event) => setSimulationAcceleration(Number(event.target.value))} /></label><label>Initial velocity <output>{simulationVelocity.toFixed(1)} m/s</output><input type="range" min="0" max="8" step="0.1" value={simulationVelocity} onChange={(event) => setSimulationVelocity(Number(event.target.value))} /></label><label>Mass <output>{simulationMass.toFixed(1)} kg</output><input type="range" min="0.2" max="5" step="0.1" value={simulationMass} onChange={(event) => setSimulationMass(Number(event.target.value))} /></label><label>Gravity <output>{simulationGravity.toFixed(1)} m/s²</output><input type="range" min="0" max="20" step="0.1" value={simulationGravity} onChange={(event) => setSimulationGravity(Number(event.target.value))} /></label><div className="simulation-actions"><button type="button" className="primary-button" onClick={() => setSimulationPlaying((value) => !value)}>{simulationPlaying ? 'Pause' : 'Play'}</button><button type="button" className="text-button" onClick={() => { setSimulationPlaying(false); setSimulationResetToken((value) => value + 1) }}>Reset</button></div></div><div className="simulation-stage"><PhysicsSimulationCanvas acceleration={simulationAcceleration} initialVelocity={simulationVelocity} mass={simulationMass} gravity={simulationGravity} playing={simulationPlaying} resetToken={simulationResetToken} /><div className="simulation-overlay"><span>Ball motion</span><strong>{simulationPlaying ? 'Live' : 'Ready'}</strong></div></div></div><div className="simulation-note"><strong>Practical:</strong> {selectedTopic.practical} Increase a control, press Play, then reset and compare the result.</div></section>
   }
 
   function renderResourcesView() {
