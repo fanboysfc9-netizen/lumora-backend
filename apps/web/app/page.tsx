@@ -1023,6 +1023,22 @@ export default function Page() {
     setMobileNavOpen(false)
   }
 
+  async function startNewChat() {
+    setMessages([])
+    setConversationId(null)
+    setWorkspaceView('chat')
+    setWorkspaceError(null)
+    setMobileNavOpen(false)
+    if (!session) return
+    try {
+      const response = await authenticatedFetch(`${API_URL!}/conversations`, session)
+      const data = await response.json()
+      if (response.ok && data?.ok && Array.isArray(data.conversations)) setConversations(data.conversations)
+    } catch (error) {
+      setWorkspaceError(error instanceof Error ? error.message : 'Recent conversations unavailable')
+    }
+  }
+
   function formatConversationDate(value: string) {
     const date = new Date(value)
     const now = new Date()
@@ -1398,7 +1414,7 @@ export default function Page() {
           <span className="brand-mark" aria-hidden="true">L</span>
           <span>Lumora Cognita</span>
         </div>
-        <button className="new-chat-btn" onClick={() => { setMessages([]); setConversationId(null); setMobileNavOpen(false) }}><Icon name="plus" /> New Chat</button>
+        <button type="button" className="new-chat-btn" onClick={startNewChat}><Icon name="plus" /> New Chat</button>
 
         <div className="sidebar-search">
           <Icon name="menu" />
@@ -1421,16 +1437,16 @@ export default function Page() {
 
         <nav className="workspace-nav" aria-label="Workspace">
           <div className="nav-section-label">Workspace</div>
-          <button className="nav-item nav-icon-item" onClick={() => openWorkspace('chat')}><Icon name="home" /> <span>Home</span></button>
-          <button className="nav-item nav-icon-item active" onClick={() => openWorkspace('chat')}><Icon name="chat" /> <span>Chats</span></button>
-          <button className="nav-item nav-icon-item" onClick={() => openWorkspace('projects')}><Icon name="folder" /> <span>Projects</span></button>
+          <button type="button" className="nav-item nav-icon-item" onClick={() => openWorkspace('chat')}><Icon name="home" /> <span>Home</span></button>
+          <button type="button" className={`nav-item nav-icon-item ${workspaceView === 'chat' ? 'active' : ''}`} onClick={() => openWorkspace('chat')}><Icon name="chat" /> <span>Chats</span></button>
+          <button type="button" className={`nav-item nav-icon-item ${workspaceView === 'projects' ? 'active' : ''}`} onClick={() => openWorkspace('projects')}><Icon name="folder" /> <span>Projects</span></button>
           <div className="nav-section-label">Learning</div>
-          <button className="nav-item nav-icon-item" onClick={() => openWorkspace('plans')}><Icon name="book" /> <span>Study Plans</span></button>
-          <button className="nav-item nav-icon-item" onClick={() => { setWorkspaceView('homework'); setMobileNavOpen(false) }}><Icon name="spark" /> <span>Homework Helper</span></button>
+          <button type="button" className={`nav-item nav-icon-item ${workspaceView === 'plans' ? 'active' : ''}`} onClick={() => openWorkspace('plans')}><Icon name="book" /> <span>Study Plans</span></button>
+          <button type="button" className={`nav-item nav-icon-item ${workspaceView === 'homework' ? 'active' : ''}`} onClick={() => { setWorkspaceView('homework'); setMobileNavOpen(false) }}><Icon name="spark" /> <span>Homework Helper</span></button>
           <button className="nav-item nav-icon-item" disabled><Icon name="spark" /> <span>Practice</span></button>
           <button className="nav-item nav-icon-item" disabled><Icon name="spark" /> <span>Simulations</span></button>
           <div className="nav-section-label">Resources</div>
-          <button className="nav-item nav-icon-item" onClick={() => { setWorkspaceView('youtube'); setMobileNavOpen(false) }}><Icon name="book" /> <span>YouTube</span></button>
+          <button type="button" className={`nav-item nav-icon-item ${workspaceView === 'youtube' ? 'active' : ''}`} onClick={() => { setWorkspaceView('youtube'); setMobileNavOpen(false) }}><Icon name="book" /> <span>YouTube</span></button>
           <button className="nav-item nav-icon-item" disabled><Icon name="book" /> <span>Wikipedia</span></button>
           <button className="nav-item nav-icon-item" disabled><Icon name="folder" /> <span>Saved Resources</span></button>
           <button className="nav-item nav-icon-item" disabled><Icon name="folder" /> <span>Files</span></button>
