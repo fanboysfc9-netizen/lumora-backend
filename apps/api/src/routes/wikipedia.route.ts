@@ -15,15 +15,28 @@ function wikipediaUrl(value: string) {
   } catch { return undefined }
 }
 
+async function articleExtract(source: string | undefined) {
+  if (!source) return ''
+  try {
+    const title = decodeURIComponent(new URL(source).pathname.split('/wiki/')[1] || '').replace(/_/g, ' ')
+    if (!title) return ''
+    const response = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`, { headers: { accept: 'application/json' } })
+    if (!response.ok) return ''
+    const data = await response.json() as { extract?: string }
+    return String(data.extract || '').slice(0, 5000)
+  } catch { return '' }
+}
+
 router.post('/search', createOptionalSupabaseAuthMiddleware(), async (req: Request, res) => {
   try {
     const query = cleanQuery(req.body?.query)
     if (!query) return res.status(400).json({ ok: false, error: 'question or topic is required' })
     const results = await knowledgeRouter.fetchSerpResults(`site:wikipedia.org ${query}`, { timeoutMs: 3500 })
-    const articles = results
+    const articles = await Promise.all(results
       .map((result) => ({ ...result, source: result.source ? wikipediaUrl(result.source) : undefined }))
       .filter((result) => Boolean(result.source))
       .slice(0, 6)
+      .map(async (result) => ({ ...result, extract: await articleExtract(result.source) })))
     return res.json({ ok: true, query, articles })
   } catch (error: any) {
     console.error('[wikipedia] search failed', error?.message || error)
