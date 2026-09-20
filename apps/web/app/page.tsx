@@ -9,6 +9,7 @@ import { getTimeGreeting } from '../utils/time-greeting'
 import { userScopedStorageKey } from '../utils/user-scoped-state'
 import { buildWorkspaceApiUrl, normalizeApiBaseUrl } from '../utils/api-endpoints'
 import * as THREE from 'three'
+import { EXPERIMENTS, applyExperimentParams, experimentById, ExperimentState } from './physics-experiments'
 
 type Msg = { role: 'user' | 'assistant' | 'system'; text: string; id?: string; subject?: string; mode?: string; targetId?: string }
 type Project = { id: string; title: string; description: string; subject: string; goal?: string; deadline?: string | null; status?: string; progress_percent?: number; created_at?: string; updated_at?: string }
@@ -19,7 +20,7 @@ type Conversation = { id: string; title: string; created_at: string; updated_at:
 type YouTubeVideo = { videoId: string; title: string; thumbnailUrl: string; channelTitle: string; publishedAt: string | null; watchUrl: string; embedUrl: string }
 type PendingAttachment = { file: File; previewUrl: string | null; kind: 'image' | 'document' }
 type PracticeKind = 'test' | 'quiz' | 'exam'
-type PracticeQuestion = { id: string; topic: string; prompt: string; answer: string; source?: string }
+type PracticeQuestion = { id: string; topic: string; prompt: string; answer: string; verification: string; source?: string }
 type PracticePacket = { plan: { id: string; title: string; subject: string }; kind: PracticeKind; questions: PracticeQuestion[]; sources: Array<{ title: string; snippet: string; source?: string }> }
 
 function canUseWebGL() {
@@ -29,6 +30,43 @@ function canUseWebGL() {
   } catch {
     return false
   }
+}
+
+function ExperimentCanvas({ experimentId, values, running, stepSignal, resetSignal, onReadouts }: { experimentId: string; values: Record<string, number>; running: boolean; stepSignal: number; resetSignal: number; onReadouts: (readouts: Array<{ label: string; value: string }>) => void }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const runningRef = useRef(running)
+  const stepRef = useRef(stepSignal)
+  useEffect(() => { runningRef.current = running }, [running])
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const experiment = experimentById(experimentId)
+    const state: ExperimentState = applyExperimentParams(experiment, values)
+    let accumulator = 0
+    let last = performance.now()
+    let frame = 0
+    const fixedStep = 1 / 60
+    const draw = (now: number) => {
+      const elapsed = Math.min(Math.max(0, (now - last) / 1000), .1)
+      last = now
+      if (runningRef.current) accumulator += elapsed
+      while (accumulator >= fixedStep) { experiment.step(state, fixedStep); accumulator -= fixedStep }
+      const width = canvas.clientWidth || 700
+      const height = canvas.clientHeight || 460
+      const ratio = Math.min(window.devicePixelRatio, 2)
+      canvas.width = width * ratio
+      canvas.height = height * ratio
+      const context = canvas.getContext('2d')
+      if (context) { context.setTransform(ratio, 0, 0, ratio, 0, 0); experiment.draw(context, state, width, height); onReadouts(experiment.readouts(state)) }
+      frame = requestAnimationFrame(draw)
+    }
+    if (stepSignal > stepRef.current) { experiment.step(state, fixedStep); stepRef.current = stepSignal }
+    else stepRef.current = stepSignal
+    if (resetSignal) Object.assign(state, applyExperimentParams(experiment, values))
+    frame = requestAnimationFrame(draw)
+    return () => cancelAnimationFrame(frame)
+  }, [experimentId, values, resetSignal, onReadouts])
+  return <canvas ref={canvasRef} className="physics-canvas experiment-canvas" aria-label={experimentById(experimentId).title} />
 }
 
 function PhysicsSimulationCanvas({ acceleration, initialVelocity, mass, gravity, playing, resetToken }: { acceleration: number; initialVelocity: number; mass: number; gravity: number; playing: boolean; resetToken: number }) {
@@ -500,6 +538,11 @@ export default function Page() {
   const [practiceAnswers, setPracticeAnswers] = useState<Record<string, string>>({})
   const [practiceChecked, setPracticeChecked] = useState<Record<string, boolean>>({})
   const [simulationPlaying, setSimulationPlaying] = useState(false)
+  const [activeExperimentId, setActiveExperimentId] = useState('projectile')
+  const [experimentValues, setExperimentValues] = useState<Record<string, number>>(() => Object.fromEntries(EXPERIMENTS[0].params.map((param) => [param.key, param.value])))
+  const [experimentReadouts, setExperimentReadouts] = useState<Array<{ label: string; value: string }>>([])
+  const [experimentStepSignal, setExperimentStepSignal] = useState(0)
+  const [experimentResetSignal, setExperimentResetSignal] = useState(0)
   const [simulationResetToken, setSimulationResetToken] = useState(0)
   const [simulationAcceleration, setSimulationAcceleration] = useState(2)
   const [simulationVelocity, setSimulationVelocity] = useState(2)
@@ -1815,7 +1858,7 @@ export default function Page() {
         </div>
         {practiceError && <div className="workspace-error" role="alert">{practiceError}</div>}
         {selectedPlan && !practicePacket && <p className="workspace-muted">Practice will focus on incomplete topics from {selectedPlan.title} and use current educational sources.</p>}
-        {practicePacket && <div className="practice-packet"><div className="practice-packet-header"><div><h2>{practicePacket.plan.title}</h2><p className="workspace-muted">{practicePacket.kind.toUpperCase()} · {practicePacket.plan.subject}</p></div><button type="button" className="text-button" onClick={() => { setPracticePacket(null); setPracticeChecked({}) }}>Choose another</button></div>{practicePacket.questions.map((question, index) => <article className="practice-question" key={question.id}><span className="practice-topic">Question {index + 1} · {question.topic}</span><h3>{question.prompt}</h3><textarea value={practiceAnswers[question.id] || ''} onChange={(event) => setPracticeAnswers((answers) => ({ ...answers, [question.id]: event.target.value }))} placeholder="Write your answer..." rows={3} /><button type="button" className="text-button" onClick={() => setPracticeChecked((checked) => ({ ...checked, [question.id]: !checked[question.id] }))}>{practiceChecked[question.id] ? 'Hide guidance' : 'Check guidance'}</button>{practiceChecked[question.id] && <div className="practice-guidance"><strong>Study guidance</strong><p>{question.answer}</p>{question.source && <a href={question.source} target="_blank" rel="noreferrer">Open source</a>}</div>}</article>)}</div>}
+        {practicePacket && <div className="practice-packet"><div className="practice-packet-header"><div><h2>{practicePacket.plan.title}</h2><p className="workspace-muted">{practicePacket.kind.toUpperCase()} · {practicePacket.plan.subject}</p></div><button type="button" className="text-button" onClick={() => { setPracticePacket(null); setPracticeChecked({}) }}>Choose another</button></div>{practicePacket.questions.map((question, index) => <article className="practice-question" key={question.id}><span className="practice-topic">Question {index + 1} · {question.topic}</span><h3>{question.prompt}</h3><textarea value={practiceAnswers[question.id] || ''} onChange={(event) => setPracticeAnswers((answers) => ({ ...answers, [question.id]: event.target.value }))} placeholder="Write your answer..." rows={3} /><button type="button" className="text-button" onClick={() => setPracticeChecked((checked) => ({ ...checked, [question.id]: !checked[question.id] }))}>{practiceChecked[question.id] ? 'Hide answer' : 'Check answer'}</button>{practiceChecked[question.id] && <div className="practice-guidance"><strong>Model answer</strong><p>{question.answer}</p><strong>Verification</strong><p>{question.verification}</p>{question.source && <a href={question.source} target="_blank" rel="noreferrer">Open source</a>}</div>}</article>)}</div>}
       </>}
     </section>
   }
@@ -1836,6 +1879,13 @@ export default function Page() {
   function renderResourcesView() {
     const sources = practicePacket?.sources || []
     return <section className="workspace-content"><div className="workspace-heading"><div><h1>Saved resources</h1><p className="workspace-muted">Sources from your latest practice session appear here.</p></div></div>{sources.length ? <div className="resource-list">{sources.map((source, index) => <article className="resource-item" key={`${source.title}-${index}`}><strong>{source.title}</strong><p>{source.snippet}</p>{source.source && <a href={source.source} target="_blank" rel="noreferrer">Open source</a>}</article>)}</div> : <div className="empty-workspace">Start a practice session to collect topic sources here.</div>}</section>
+  }
+
+  function renderExperimentRegistryView() {
+    const experiment = experimentById(activeExperimentId)
+    const selectExperiment = (id: string) => { const next = experimentById(id); setActiveExperimentId(id); setExperimentValues(Object.fromEntries(next.params.map((param) => [param.key, param.value]))); setExperimentReadouts([]); setExperimentResetSignal((value) => value + 1); setSimulationPlaying(false) }
+    const updateParam = (key: string, value: number) => setExperimentValues((current) => ({ ...current, [key]: value }))
+    return <section className="workspace-content experiment-workspace"><div className="workspace-heading"><div><h1>Interactive Physics Labs</h1><p className="workspace-muted">Seven offline experiments with fixed-step physics, live readouts, and keyboard-accessible controls.</p></div></div><div className="experiment-layout"><aside className="experiment-sidebar"><strong>Experiments</strong>{['Mechanics', 'Waves', 'Electricity'].map((category) => <div key={category}><span className="experiment-category">{category}</span>{EXPERIMENTS.filter((item) => item.category === category).map((item) => <button type="button" key={item.id} className={item.id === experiment.id ? 'experiment-nav active' : 'experiment-nav'} onClick={() => selectExperiment(item.id)}>{item.title}</button>)}</div>)}</aside><div className="experiment-main"><div className="experiment-canvas-wrap"><ExperimentCanvas experimentId={experiment.id} values={experimentValues} running={simulationPlaying} stepSignal={experimentStepSignal} resetSignal={experimentResetSignal} onReadouts={setExperimentReadouts} /></div><div className="experiment-readouts">{experimentReadouts.map((item) => <div key={item.label}><span>{item.label}</span><strong>{item.value}</strong></div>)}</div></div><aside className="experiment-controls"><strong>Parameters</strong>{experiment.params.map((param) => <label key={param.key}>{param.label}<output>{Number(experimentValues[param.key] ?? param.value).toFixed(param.step < 1 ? 2 : 0)}</output><input aria-label={param.label} type="range" min={param.min} max={param.max} step={param.step} value={experimentValues[param.key] ?? param.value} onChange={(event) => updateParam(param.key, Number(event.target.value))} /></label>)}<div className="experiment-actions"><button type="button" className="primary-button" onClick={() => setSimulationPlaying((value) => !value)}>{simulationPlaying ? 'Pause' : 'Play'}</button><button type="button" className="text-button" onClick={() => { setSimulationPlaying(false); setExperimentResetSignal((value) => value + 1) }}>Reset</button><button type="button" className="text-button" onClick={() => setExperimentStepSignal((value) => value + 1)}>Step once</button></div></aside></div></section>
   }
 
   function renderYouTubeView() {
@@ -1931,7 +1981,7 @@ export default function Page() {
       </aside>
       {mobileNavOpen && <button className="sidebar-backdrop" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />}
       <main className="main" style={{ width: '100%' }}>
-        {workspaceView !== 'chat' ? <div className="workspace-panel-shell"><button type="button" className="mobile-workspace-back" onClick={() => setWorkspaceView('chat')} aria-label="Back to chat"><Icon name="arrow-left" /> <span>Back to chat</span></button>{workspaceError && <div className="workspace-error" role="alert">{workspaceError}</div>}{workspaceView === 'projects' ? renderProjectView() : workspaceView === 'plans' ? renderPlanView() : workspaceView === 'homework' ? renderHomeworkView() : workspaceView === 'practice' ? renderPracticeView() : workspaceView === 'simulations' ? renderSimulationView() : workspaceView === 'resources' ? renderResourcesView() : renderYouTubeView()}</div> : <div className="chat-container" style={{ width: '100%' }}>
+        {workspaceView !== 'chat' ? <div className="workspace-panel-shell"><button type="button" className="mobile-workspace-back" onClick={() => setWorkspaceView('chat')} aria-label="Back to chat"><Icon name="arrow-left" /> <span>Back to chat</span></button>{workspaceError && <div className="workspace-error" role="alert">{workspaceError}</div>}{workspaceView === 'projects' ? renderProjectView() : workspaceView === 'plans' ? renderPlanView() : workspaceView === 'homework' ? renderHomeworkView() : workspaceView === 'practice' ? renderPracticeView() : workspaceView === 'simulations' ? renderExperimentRegistryView() : workspaceView === 'resources' ? renderResourcesView() : renderYouTubeView()}</div> : <div className="chat-container" style={{ width: '100%' }}>
           <div className="chat-area">
             <div className="chat-header">
               <div className="chat-header-left">

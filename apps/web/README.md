@@ -41,3 +41,7 @@ npm run build
 ```
 
 The build will fail early if `NEXT_PUBLIC_API_URL` is missing or set to `localhost` while building for production.
+
+## Adding an experiment
+
+Add one `Experiment` object to `app/physics-experiments.ts` with an `id`, `category`, `title`, `params`, `init`, `step`, `draw`, and `readouts` implementation, then append it to `EXPERIMENTS`. The Simulations workspace automatically creates its sidebar entry, parameter sliders, Play/Pause/Reset/Step controls, fixed-timestep loop, canvas, and live readouts.
