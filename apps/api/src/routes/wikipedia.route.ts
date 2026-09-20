@@ -31,7 +31,8 @@ router.post('/search', createOptionalSupabaseAuthMiddleware(), async (req: Reque
   try {
     const query = cleanQuery(req.body?.query)
     if (!query) return res.status(400).json({ ok: false, error: 'question or topic is required' })
-    const results = await knowledgeRouter.fetchSerpResults(`site:wikipedia.org ${query}`, { timeoutMs: 3500 })
+    const scopedResults = await knowledgeRouter.fetchSerpResults(`site:wikipedia.org ${query}`, { timeoutMs: 3500 })
+    const results = scopedResults.length ? scopedResults : await knowledgeRouter.fetchSerpResults(query, { timeoutMs: 3500 })
     const articles = await Promise.all(results
       .map((result) => ({ ...result, source: result.source ? wikipediaUrl(result.source) : undefined }))
       .filter((result) => Boolean(result.source))
