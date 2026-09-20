@@ -21,14 +21,22 @@ type PracticeKind = 'test' | 'quiz' | 'exam'
 type PracticeQuestion = { id: string; topic: string; prompt: string; answer: string; source?: string }
 type PracticePacket = { plan: { id: string; title: string; subject: string }; kind: PracticeKind; questions: PracticeQuestion[]; sources: Array<{ title: string; snippet: string; source?: string }> }
 
+function canUseWebGL() {
+  try {
+    const probe = document.createElement('canvas')
+    return Boolean(probe.getContext('webgl') || probe.getContext('experimental-webgl'))
+  } catch {
+    return false
+  }
+}
+
 function PhysicsSimulationCanvas({ acceleration, initialVelocity, mass, gravity, playing, resetToken }: { acceleration: number; initialVelocity: number; mass: number; gravity: number; playing: boolean; resetToken: number }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const webglContext = canvas.getContext('webgl') || canvas.getContext('experimental-webgl')
-    if (!webglContext) {
+    if (!canUseWebGL()) {
       const context = canvas.getContext('2d')
       if (!context) return
       let position = 0
@@ -164,8 +172,7 @@ function AtomSimulationCanvas({ element, playing, resetToken }: { element: typeo
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const webglContext = canvas.getContext('webgl') || canvas.getContext('experimental-webgl')
-    if (!webglContext) {
+    if (!canUseWebGL()) {
       const context = canvas.getContext('2d')
       if (!context) return
       let rotation = 0
@@ -225,8 +232,7 @@ function MoleculeSimulationCanvas({ molecule, playing }: { molecule: typeof MOLE
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const webglContext = canvas.getContext('webgl') || canvas.getContext('experimental-webgl')
-    if (!webglContext) {
+    if (!canUseWebGL()) {
       const context = canvas.getContext('2d')
       if (!context) return
       let rotation = 0
@@ -372,9 +378,7 @@ export default function Page() {
   const [profileMessage, setProfileMessage] = useState<string | null>(null)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const previousUserIdRef = useRef<string | null>(null)
-  const [theme, setTheme] = useState<string>(() => {
-    try { return localStorage.getItem('lumora_theme') || 'light' } catch { return 'light' }
-  })
+  const [theme, setTheme] = useState<string>('light')
   const [showStats, setShowStats] = useState(false)
   const [workspaceView, setWorkspaceView] = useState<'chat' | 'projects' | 'plans' | 'youtube' | 'homework' | 'practice' | 'simulations' | 'resources'>('chat')
   const [projects, setProjects] = useState<Project[]>([])
@@ -453,9 +457,7 @@ export default function Page() {
   const [conversationError, setConversationError] = useState<string | null>(null)
   const [input, setInput] = useState('')
   const [mode, setMode] = useState<string>('chat')
-  const [activeMode, setActiveMode] = useState<string>(() => {
-    try { return localStorage.getItem('lumora_mode') || 'nira' } catch { return 'nira' }
-  })
+  const [activeMode, setActiveMode] = useState<string>('nira')
   const [subject, setSubject] = useState<string>('mathematics')
   const [isThinking, setIsThinking] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
@@ -1262,8 +1264,15 @@ export default function Page() {
       setProfileSaving(false)
       setProfileMessage(result.error ? result.error.message : 'Profile updated')
     }
-  const [now, setNow] = useState(() => new Date())
+  const [now, setNow] = useState(() => new Date(0))
   useEffect(() => {
+    try {
+      const storedTheme = localStorage.getItem('lumora_theme')
+      if (storedTheme) setTheme(storedTheme)
+      const storedMode = localStorage.getItem('lumora_mode')
+      if (storedMode) setActiveMode(storedMode)
+    } catch {}
+    setNow(new Date())
     const timer = window.setInterval(() => setNow(new Date()), 60000)
     return () => window.clearInterval(timer)
   }, [])
