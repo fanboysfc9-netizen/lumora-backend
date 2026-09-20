@@ -50,7 +50,10 @@ router.post('/', createOptionalSupabaseAuthMiddleware(), async (req: Request, re
     logTiming('learning_context', contextStartedAt)
 
     const modelStartedAt = performance.now()
-    const result = await cognitaService.handleMessage({ userId, message, conversationId, mode: mappedMode, learningContext })
+    const conversationHistory = userId
+      ? await supabaseChatService.getHistory({ userId, accessToken: req.auth!.accessToken }, conversationId, 12)
+      : null
+    const result = await cognitaService.handleMessage({ userId, message, conversationId, mode: mappedMode, learningContext, conversationHistory: conversationHistory?.history || [] })
     logTiming('model_and_adaptation', modelStartedAt)
     if (!userId) {
       logTiming('response', requestStartedAt)

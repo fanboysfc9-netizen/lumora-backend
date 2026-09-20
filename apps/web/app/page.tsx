@@ -1,3 +1,4 @@
+type WikipediaArticle = { title: string; snippet: string; source?: string }
 "use client"
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
@@ -440,7 +441,7 @@ export default function Page() {
   const previousUserIdRef = useRef<string | null>(null)
   const [theme, setTheme] = useState<string>('light')
   const [showStats, setShowStats] = useState(false)
-  const [workspaceView, setWorkspaceView] = useState<'chat' | 'projects' | 'plans' | 'youtube' | 'homework' | 'practice' | 'simulations' | 'resources'>('chat')
+  const [workspaceView, setWorkspaceView] = useState<'chat' | 'projects' | 'plans' | 'youtube' | 'homework' | 'practice' | 'simulations' | 'resources' | 'wikipedia'>('chat')
   const [projects, setProjects] = useState<Project[]>([])
   const [studyPlans, setStudyPlans] = useState<StudyPlan[]>([])
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
@@ -482,6 +483,10 @@ export default function Page() {
   const [youtubePlayerError, setYoutubePlayerError] = useState(false)
   const [youtubeLoading, setYoutubeLoading] = useState(false)
   const [youtubeMessage, setYoutubeMessage] = useState<string | null>(null)
+    const [wikipediaQuery, setWikipediaQuery] = useState('')
+    const [wikipediaArticles, setWikipediaArticles] = useState<WikipediaArticle[]>([])
+    const [wikipediaLoading, setWikipediaLoading] = useState(false)
+    const [wikipediaMessage, setWikipediaMessage] = useState<string | null>(null)
   const [pendingAttachment, setPendingAttachment] = useState<PendingAttachment | null>(null)
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false)
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
@@ -1603,6 +1608,24 @@ export default function Page() {
     }
   }
 
+  async function searchWikipedia(event?: React.FormEvent) {
+    event?.preventDefault()
+    const query = wikipediaQuery.trim()
+    if (!query) { setWikipediaMessage('Enter a question or topic first.'); return }
+    setWikipediaLoading(true)
+    setWikipediaMessage(null)
+    try {
+      const response = await fetch(buildWorkspaceApiUrl(API_URL, '/wikipedia/search'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query }) })
+      const data = await response.json()
+      if (!response.ok || !data?.ok) throw new Error(data?.error || 'Wikipedia search is unavailable')
+      setWikipediaArticles(Array.isArray(data.articles) ? data.articles : [])
+      setWikipediaMessage(data.articles?.length ? null : 'No Wikipedia article matched that question.')
+    } catch (error) {
+      setWikipediaArticles([])
+      setWikipediaMessage(error instanceof Error ? error.message : 'Wikipedia search is unavailable')
+    } finally { setWikipediaLoading(false) }
+  }
+
   async function archiveStudyPlan(plan: StudyPlan) {
     if (!session || !window.confirm(`Archive "${plan.title}"?`)) return
     try {
@@ -1816,6 +1839,11 @@ export default function Page() {
   }
 
   function renderYouTubeView() {
+
+      function renderWikipediaView() {
+        return <section className="workspace-content"><div className="workspace-heading"><div><h1>Wikipedia research</h1><p className="workspace-muted">Ask a question or enter a topic. Lumora searches Wikipedia through the server and brings the result into this page.</p></div></div><form className="workspace-search-form" onSubmit={searchWikipedia}><label htmlFor="wikipedia-query">Question or topic</label><div className="workspace-search-row"><input id="wikipedia-query" value={wikipediaQuery} onChange={(event) => setWikipediaQuery(event.target.value)} placeholder="What is electromagnetic induction?" /><button type="submit" className="primary-button" disabled={wikipediaLoading}>{wikipediaLoading ? 'Searching...' : 'Search Wikipedia'}</button></div></form>{wikipediaMessage && <p className="workspace-muted" role="status">{wikipediaMessage}</p>}<div className="resource-list">{wikipediaArticles.map((article, index) => <article className="resource-item" key={`${article.title}-${index}`}><strong>{article.title}</strong><p>{article.snippet}</p>{article.source && <a href={article.source} target="_blank" rel="noreferrer">Open full article</a>}</article>)}</div></section>
+      }
+              <button type="button" className={`nav-item nav-icon-item ${workspaceView === 'wikipedia' ? 'active' : ''}`} onClick={() => { setWorkspaceView('wikipedia'); setMobileNavOpen(false) }}><Icon name="book" /> <span>Wikipedia</span></button>
     return <section className="workspace-content">
       <div className="workspace-heading"><div><h1>Learn with video</h1><p className="workspace-muted">Find focused lessons for a topic, project, or study plan.</p></div></div>
       <form className="workspace-search-form" onSubmit={searchLearningVideos}>

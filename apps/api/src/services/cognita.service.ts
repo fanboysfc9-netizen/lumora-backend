@@ -74,8 +74,8 @@ class CognitaService {
 
   // AI logic centralized in groq.service (askGroq handles prompts & memory)
 
-  async handleMessage(options: { userId?: string; message: string; conversationId?: string; mode?: string; learningContext?: LearningContext | null }) {
-    const { userId, message, conversationId, mode: providedMode, learningContext } = options
+  async handleMessage(options: { userId?: string; message: string; conversationId?: string; mode?: string; learningContext?: LearningContext | null; conversationHistory?: Array<{ role: string; text: string }> }) {
+    const { userId, message, conversationId, mode: providedMode, learningContext, conversationHistory = [] } = options
 
     // Map frontend mode to internal Mode
     const mapMode = (m?: string): Mode => {
@@ -229,6 +229,8 @@ class CognitaService {
     }
 
     // Build messages for Groq: system gets the processed core prompt, user gets the user's message
+    const recentMemory = conversationHistory.slice(-10).map((item) => `${item.role === 'assistant' ? 'Tutor' : 'Learner'}: ${String(item.text || '').slice(0, 1200)}`).join('\n')
+    if (recentMemory) corePrompt.prompt = `${corePrompt.prompt}\n\nRecent conversation memory (use only when relevant; do not mention this block):\n${recentMemory}`
     const messages = [
       { role: 'system', content: corePrompt.prompt },
       { role: 'user', content: message }
