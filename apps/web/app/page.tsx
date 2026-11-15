@@ -34,38 +34,107 @@ function canUseWebGL() {
 
 function ExperimentCanvas({ experimentId, values, running, stepSignal, resetSignal, onReadouts }: { experimentId: string; values: Record<string, number>; running: boolean; stepSignal: number; resetSignal: number; onReadouts: (readouts: Array<{ label: string; value: string }>) => void }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const stateRef = useRef<ExperimentState | null>(null)
+  const experimentRef = useRef(experimentById(experimentId))
   const runningRef = useRef(running)
   const stepRef = useRef(stepSignal)
-  useEffect(() => { runningRef.current = running }, [running])
+  const resetRef = useRef(resetSignal)
+  const valuesRef = useRef(values)
+  const onReadoutsRef = useRef(onReadouts)
+  const accumulatorRef = useRef(0)
+  useEffect(() => {
+    runningRef.current = running
+    if (!running) accumulatorRef.current = 0
+  }, [running])
+  useEffect(() => {
+    valuesRef.current = values
+    onReadoutsRef.current = onReadouts
+  }, [values, onReadouts])
+  useEffect(() => {
+    const experiment = experimentById(experimentId)
+    experimentRef.current = experiment
+    const state = applyExperimentParams(experiment, valuesRef.current)
+    stateRef.current = state
+    accumulatorRef.current = 0
+    onReadoutsRef.current(experiment.readouts(state))
+  }, [experimentId])
+  useEffect(() => {
+    const experiment = experimentById(experimentId)
+    const state = stateRef.current
+    if (!state) return
+    const defaults = applyExperimentParams(experiment, values)
+    experiment.params.forEach((param) => {
+      state[param.key] = values[param.key] ?? param.value
+    })
+    if (experiment.id === 'projectile' && Number(state.t) === 0) {
+      state.vx = Number(defaults.vx)
+      state.vy = Number(defaults.vy)
+    }
+    if (experiment.id === 'collisions') {
+      state.vA = Number(defaults.vA)
+      state.vB = Number(defaults.vB)
+    }
+    onReadoutsRef.current(experiment.readouts(state))
+  }, [experimentId, values])
+  useEffect(() => {
+    if (stepSignal === stepRef.current) return
+    stepRef.current = stepSignal
+    const experiment = experimentRef.current
+    const state = stateRef.current
+    if (!state) return
+    experiment.step(state, 1 / 60)
+    accumulatorRef.current = 0
+    onReadoutsRef.current(experiment.readouts(state))
+  }, [stepSignal])
+  useEffect(() => {
+    if (resetSignal === resetRef.current) return
+    resetRef.current = resetSignal
+    const experiment = experimentRef.current
+    const state = applyExperimentParams(experiment, valuesRef.current)
+    stateRef.current = state
+    accumulatorRef.current = 0
+    onReadoutsRef.current(experiment.readouts(state))
+  }, [resetSignal])
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const experiment = experimentById(experimentId)
-    const state: ExperimentState = applyExperimentParams(experiment, values)
-    let accumulator = 0
     let last = performance.now()
     let frame = 0
+    let lastReadoutUpdate = 0
     const fixedStep = 1 / 60
     const draw = (now: number) => {
       const elapsed = Math.min(Math.max(0, (now - last) / 1000), .1)
       last = now
-      if (runningRef.current) accumulator += elapsed
-      while (accumulator >= fixedStep) { experiment.step(state, fixedStep); accumulator -= fixedStep }
+      const experiment = experimentRef.current
+      const state = stateRef.current
+      if (state && runningRef.current) accumulatorRef.current += elapsed
+      while (state && accumulatorRef.current >= fixedStep) {
+        experiment.step(state, fixedStep)
+        accumulatorRef.current -= fixedStep
+      }
       const width = canvas.clientWidth || 700
       const height = canvas.clientHeight || 460
       const ratio = Math.min(window.devicePixelRatio, 2)
-      canvas.width = width * ratio
-      canvas.height = height * ratio
+      const pixelWidth = Math.round(width * ratio)
+      const pixelHeight = Math.round(height * ratio)
+      if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+        canvas.width = pixelWidth
+        canvas.height = pixelHeight
+      }
       const context = canvas.getContext('2d')
-      if (context) { context.setTransform(ratio, 0, 0, ratio, 0, 0); experiment.draw(context, state, width, height); onReadouts(experiment.readouts(state)) }
+      if (context && state) {
+        context.setTransform(ratio, 0, 0, ratio, 0, 0)
+        experiment.draw(context, state, width, height)
+        if (now - lastReadoutUpdate >= 100) {
+          onReadoutsRef.current(experiment.readouts(state))
+          lastReadoutUpdate = now
+        }
+      }
       frame = requestAnimationFrame(draw)
     }
-    if (stepSignal > stepRef.current) { experiment.step(state, fixedStep); stepRef.current = stepSignal }
-    else stepRef.current = stepSignal
-    if (resetSignal) Object.assign(state, applyExperimentParams(experiment, values))
     frame = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(frame)
-  }, [experimentId, values, resetSignal, onReadouts])
+  }, [experimentId])
   return <canvas ref={canvasRef} className="physics-canvas experiment-canvas" aria-label={experimentById(experimentId).title} />
 }
 
