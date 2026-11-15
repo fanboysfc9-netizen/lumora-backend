@@ -1,6 +1,7 @@
 type WikipediaArticle = { title: string; snippet: string; extract?: string; source?: string }
 "use client"
 import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import katex from 'katex'
 import { useSearchParams } from 'next/navigation'
 import { useSupabaseSession } from '../hooks/use-supabase-session'
 import { useAccountState } from '../hooks/use-account-state'
@@ -11,7 +12,7 @@ import { buildWorkspaceApiUrl, normalizeApiBaseUrl } from '../utils/api-endpoint
 import * as THREE from 'three'
 import { EXPERIMENTS, applyExperimentParams, experimentById, ExperimentState } from './physics-experiments'
 
-type Msg = { role: 'user' | 'assistant' | 'system'; text: string; id?: string; subject?: string; mode?: string; targetId?: string }
+type Msg = { role: 'user' | 'assistant' | 'system'; text: string; id?: string; subject?: string; mode?: string; targetId?: string; retryText?: string }
 type Project = { id: string; title: string; description: string; subject: string; goal?: string; deadline?: string | null; status?: string; progress_percent?: number; created_at?: string; updated_at?: string }
 type PlanTopic = { id?: string; week_number: number; title: string; lesson?: string; exercise?: string; completed: boolean; sort_order?: number }
 type StudyPlan = { id: string; title: string; objective: string; subject: string; learner_level: string; estimated_duration: string; schedule: string; available_time?: string; deadline?: string | null; status?: string; project_id?: string | null; study_plan_topics?: PlanTopic[] }
@@ -632,6 +633,8 @@ export default function Page() {
   const defaultStats = { totalMessages: 0, responses: 0, understood: 0, subjects: {} as Record<string, { messages: number; understood: number }> }
   const [stats, setStats] = useState(() => defaultStats)
   const [messages, setMessages] = useState<Msg[]>([])
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
+  const [messageActionError, setMessageActionError] = useState<string | null>(null)
   const [conversationId, setConversationId] = useState<string | null>(null)
   const chatRequestInFlightRef = useRef(false)
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -1157,11 +1160,30 @@ export default function Page() {
     if (!text) return null
     const lines = text.replace(/\r/g, '').split('\n')
     const nodes: React.ReactNode[] = []
+    const mathPattern = /(\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|\$\$[\s\S]*?\$\$|\$[^$\n]+\$)/g
     const renderInlineText = (value: string) => {
-      const parts = value.split(/(\*\*[^*]+\*\*|__[^_]+__)/g)
+      const parts = value.split(mathPattern)
       return parts.map((part, idx) => {
-        const match = part.match(/^(?:\*\*|__)(.*?)(?:\*\*|__)$/)
-        return match ? <strong key={idx}>{match[1]}</strong> : part
+        const isDisplayMath = (part.startsWith('\\[') && part.endsWith('\\]')) || (part.startsWith('$$') && part.endsWith('$$'))
+        const isInlineMath = (part.startsWith('\\(') && part.endsWith('\\)')) || (part.startsWith('$') && part.endsWith('$') && !part.startsWith('$$'))
+        if (isDisplayMath || isInlineMath) {
+          const displayMode = isDisplayMath
+          const math = part.startsWith('\\[') || part.startsWith('\\(') || part.startsWith('$$')
+            ? part.slice(2, -2)
+            : part.slice(1, -1)
+          return (
+            <span
+              key={idx}
+              className={displayMode ? 'message-math-inline message-math-display' : 'message-math-inline'}
+              dangerouslySetInnerHTML={{ __html: katex.renderToString(math, { displayMode, throwOnError: false }) }}
+            />
+          )
+        }
+        const boldParts = part.split(/(\*\*[^*]+\*\*|__[^_]+__)/g)
+        return boldParts.map((boldPart, boldIdx) => {
+          const match = boldPart.match(/^(?:\*\*|__)(.*?)(?:\*\*|__)$/)
+          return match ? <strong key={`${idx}-${boldIdx}`}>{match[1]}</strong> : boldPart
+        })
       })
     }
     const isTableRow = (value: string) => /^\s*\|.+\|\s*$/.test(value)
@@ -1171,6 +1193,30 @@ export default function Page() {
     while (i < lines.length) {
       const raw = lines[i]
       const line = raw.trim()
+      if (line.startsWith('\\[') || line.startsWith('$$')) {
+        const delimiter = line.startsWith('\\[') ? '\\]' : '$$'
+        const mathLines = [line.slice(2)]
+        let closingIndex = mathLines[0].indexOf(delimiter)
+        while (closingIndex < 0 && i + 1 < lines.length) {
+          i++
+          mathLines.push(lines[i])
+          closingIndex = lines[i].indexOf(delimiter)
+        }
+        if (closingIndex >= 0) {
+          const trailingText = mathLines[mathLines.length - 1].slice(closingIndex + 2).trim()
+          mathLines[mathLines.length - 1] = mathLines[mathLines.length - 1].slice(0, closingIndex)
+          nodes.push(
+            <div
+              key={`math-${i}`}
+              className="message-math-display"
+              dangerouslySetInnerHTML={{ __html: katex.renderToString(mathLines.join('\n'), { displayMode: true, throwOnError: false }) }}
+            />
+          )
+          i++
+          if (trailingText) nodes.push(<p key={`p-${i}`} className="whitespace-pre-line">{renderInlineText(trailingText)}</p>)
+          continue
+        }
+      }
       if (/^```/.test(line)) {
         const codeLines: string[] = []
         i++
@@ -1294,7 +1340,7 @@ export default function Page() {
     event.target.value = ''
   }
 
-  async function handleSend(overrideText?: string, options?: { displayText?: string }) {
+  async function handleSend(overrideText?: string, options?: { displayText?: string; skipUserMessage?: boolean }) {
     if (authLoading) return
     const text = (overrideText ?? input).trim()
     if (!text && !pendingAttachment) return
@@ -1312,7 +1358,7 @@ export default function Page() {
     const displayText = (options?.displayText || text || `Attachment: ${pendingAttachment?.file.name || 'uploaded file'}`).trim()
     const messageStamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const userMsg: Msg = { role: 'user', text: displayText, id: `u-${messageStamp}`, subject, mode: activeMode }
-    setMessages((m) => [...m, userMsg])
+    if (!options?.skipUserMessage) setMessages((m) => [...m, userMsg])
     try { setStats((s) => { const ns = { ...s, totalMessages: s.totalMessages + 1 }; const key = userScopedStorageKey('lumora_stats', session?.user.id); if (key) localStorage.setItem(key, JSON.stringify(ns)); return ns }) } catch {}
 
     const local = pendingAttachment ? null : interceptSpecialQuestions(text)
@@ -1342,7 +1388,7 @@ export default function Page() {
 
     setIsThinking(true)
     try {
-      const requestSession = session ? (await refreshSession()) || session : null
+      const requestSession = session
       try { markTiming('requestSent') } catch (e) {}
       const requestSubject = activeProjectContext?.subject || subject
       const projectContextPayload = activeProjectContext ? {
@@ -1366,7 +1412,7 @@ export default function Page() {
           setConversationId(data.conversationId)
         }
         const assistantText = typeof data.answer === 'string' ? data.answer : ''
-        const assistantMsg: Msg = { role: 'assistant', text: assistantText, id: `a-${messageStamp}`, subject, mode: activeMode }
+        const assistantMsg: Msg = { role: 'assistant', text: assistantText, id: `a-${messageStamp}`, subject, mode: activeMode, ...(attachment ? {} : { retryText: text }) }
         setMessages((m) => [...m, assistantMsg])
         setMode(data.mode || activeMode || 'chat')
         const isEdu = isComplexResponse(assistantText) || activeMode === 'research'
@@ -1381,13 +1427,13 @@ export default function Page() {
             .catch(() => undefined)
         }
       } else {
-        const assistantErr: Msg = { role: 'assistant', text: data?.error || 'Sorry, something went wrong.', id: `a-${messageStamp}`, subject, mode: activeMode }
+        const assistantErr: Msg = { role: 'assistant', text: data?.error || 'Sorry, something went wrong.', id: `a-${messageStamp}`, subject, mode: activeMode, ...(attachment ? {} : { retryText: text }) }
         setMessages((m) => [...m, assistantErr])
       }
       if (attachment) removeAttachment()
     } catch (err) {
       console.error(err)
-      setMessages((m) => [...m, { role: 'assistant', text: err instanceof ApiAuthenticationError ? err.message : err instanceof AuthenticationRequiredError ? err.message : 'I could not reach Cognita. Please try again.' }])
+      setMessages((m) => [...m, { role: 'assistant', text: err instanceof ApiAuthenticationError ? err.message : err instanceof AuthenticationRequiredError ? err.message : 'I could not reach Cognita. Please try again.', id: `a-${messageStamp}`, ...(pendingAttachment ? {} : { retryText: text }) }])
     } finally {
       setIsThinking(false)
       chatRequestInFlightRef.current = false
@@ -1514,6 +1560,54 @@ export default function Page() {
     } catch (error) {
       setWorkspaceError(error instanceof Error ? error.message : 'Recent conversations unavailable')
     }
+  }
+
+  async function copyMessage(message: Msg, messageKey: string) {
+    setMessageActionError(null)
+    if (!navigator.clipboard) {
+      setMessageActionError('Copy is unavailable in this browser context.')
+      return
+    }
+    try {
+      await navigator.clipboard.writeText(message.text)
+      setCopiedMessageId(messageKey)
+      window.setTimeout(() => setCopiedMessageId((current) => current === messageKey ? null : current), 1800)
+    } catch (error) {
+      console.error('Could not copy message', error)
+      setMessageActionError('The message could not be copied. Check clipboard permissions and try again.')
+    }
+  }
+
+  function retryAssistantMessage(messageIndex: number) {
+    if (isThinking) return
+    const message = messages[messageIndex]
+    if (!message || message.role !== 'assistant') return
+    const precedingUser = messages.slice(0, messageIndex).reverse().find((item) => item.role === 'user')
+    const retryText = message.retryText || precedingUser?.text
+    if (!retryText) {
+      setMessageActionError('There is no previous question to retry.')
+      return
+    }
+    setMessageActionError(null)
+    setMessages((current) => current.slice(0, messageIndex))
+    void handleSend(retryText, { displayText: precedingUser?.text || retryText, skipUserMessage: true })
+  }
+
+  function branchToNewChat(message: Msg, messageIndex: number) {
+    const precedingUser = messages.slice(0, messageIndex).reverse().find((item) => item.role === 'user')
+    const branchContext = [
+      'Continue in a new chat using this conversation as context:',
+      precedingUser ? `Learner: ${precedingUser.text}` : '',
+      `Tutor: ${message.text}`,
+      'What I would like to explore next: '
+    ].filter(Boolean).join('\n\n')
+    setMessages([])
+    setConversationId(null)
+    setWorkspaceView('chat')
+    setWorkspaceError(null)
+    setMessageActionError(null)
+    setInput(branchContext)
+    setMobileNavOpen(false)
   }
 
   function formatConversationDate(value: string) {
@@ -2104,13 +2198,23 @@ export default function Page() {
                   {envError}
                 </div>
               )}
-              {messages.filter((m) => m.role === 'user' || m.role === 'assistant').map((m, i) => (
-                <div key={m.id || i} className={`message ${m.role}`}>
-                  <div className={`bubble ${m.role === 'user' ? 'user' : 'assistant'}`}>
-                    {m.role === 'assistant' ? renderParsedText(m.text) : <div className="whitespace-pre-line">{m.text}</div>}
+              {messages.map((m, messageIndex) => ({ message: m, messageIndex })).filter(({ message }) => message.role === 'user' || message.role === 'assistant').map(({ message: m, messageIndex }) => {
+                const messageKey = m.id || `message-${messageIndex}`
+                const canRetry = m.role === 'assistant' && (Boolean(m.retryText) || messages.slice(0, messageIndex).some((item) => item.role === 'user'))
+                return (
+                  <div key={messageKey} className={`message ${m.role}`}>
+                    <div className={`bubble ${m.role === 'user' ? 'user' : 'assistant'}`}>
+                      {m.role === 'assistant' ? renderParsedText(m.text) : <div className="whitespace-pre-line">{m.text}</div>}
+                    </div>
+                    <div className="message-actions">
+                      <button type="button" onClick={() => void copyMessage(m, messageKey)}>{copiedMessageId === messageKey ? 'Copied' : 'Copy'}</button>
+                      {m.role === 'assistant' && canRetry && <button type="button" onClick={() => retryAssistantMessage(messageIndex)} disabled={isThinking}>Try again</button>}
+                      {m.role === 'assistant' && <button type="button" onClick={() => branchToNewChat(m, messageIndex)} disabled={isThinking}>Branch to new chat</button>}
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
+              {messageActionError && <div className="message-action-error" role="alert">{messageActionError}</div>}
 
               {isThinking && (
                 <div className="message assistant">

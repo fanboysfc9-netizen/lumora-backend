@@ -147,7 +147,169 @@ forceLab.readouts = (s) => [
 ]
 const magnetismLab = { id: 'magnetism-fields', category: 'Physics', title: 'Magnetism — Fields & Moving Charges', params: [n('field', 'Magnetic field', 0, 10, .1, 3), n('charge', 'Charge', -3, 3, .1, 1), n('speed', 'Particle speed', 0, 20, .1, 8), n('mass', 'Particle mass', .1, 5, .1, 1)], init: () => ({ t: 0 }), step: (s, dt) => { s.t = num(s, 't') + dt }, draw: (ctx, s, w, h) => { base(ctx, w, h); const cx = w / 2; const cy = h / 2; const radius = Math.max(20, num(s, 'mass') * num(s, 'speed') / Math.max(.1, Math.abs(num(s, 'charge')) * num(s, 'field')) * 12); ctx.strokeStyle = '#7488a7'; ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI * 2); ctx.stroke(); const a = num(s, 't') * 2; ctx.fillStyle = '#d4b36a'; ctx.beginPath(); ctx.arc(cx + Math.cos(a) * radius, cy + Math.sin(a) * radius, 9, 0, Math.PI * 2); ctx.fill(); text(ctx, 'F = qv × B', 18, 24) }, readouts: s => [{ label: 'Orbit radius', value: `${(num(s, 'mass') * num(s, 'speed') / Math.max(.1, Math.abs(num(s, 'charge')) * num(s, 'field'))).toFixed(2)} m` }, { label: 'Cyclotron period', value: `${(2 * Math.PI * num(s, 'mass') / Math.max(.1, Math.abs(num(s, 'charge')) * num(s, 'field'))).toFixed(2)} s` }, { label: 'Direction', value: num(s, 'charge') >= 0 ? 'Positive charge' : 'Negative charge' }] } as Experiment
 const capacitor = { id: 'capacitor', category: 'Physics', title: 'Capacitance — Plates & RC Charging', params: [n('area', 'Plate area', .01, 2, .01, .2), n('separation', 'Separation', .01, 1, .01, .1), n('dielectric', 'Dielectric', 1, 10, .1, 1), n('resistance', 'Resistance', 1, 100, 1, 10), n('voltage', 'Voltage', 1, 24, .5, 12)], init: () => ({ t: 0 }), step: (s, dt) => { s.t = num(s, 't') + dt }, draw: (ctx, s, w, h) => { base(ctx, w, h); const cx = w / 2; const cy = h / 2; ctx.fillStyle = '#81a9d6'; ctx.fillRect(cx - 70, cy - 70, 12, 140); ctx.fillRect(cx + 58, cy - 70, 12, 140); const c = 8.854e-12 * num(s, 'dielectric') * num(s, 'area') / num(s, 'separation'); const v = num(s, 'voltage') * (1 - Math.exp(-num(s, 't') / Math.max(.01, num(s, 'resistance') * c * 1e9))); for (let y = cy - 55; y < cy + 55; y += 18) line(ctx, cx - 50, y, cx + 50, y, '#d4b36a', 1); text(ctx, `V(t) = ${v.toFixed(2)} V`, 18, 24) }, readouts: s => { const c = 8.854e-12 * num(s, 'dielectric') * num(s, 'area') / num(s, 'separation'); const tau = num(s, 'resistance') * c; const v = num(s, 'voltage') * (1 - Math.exp(-num(s, 't') / Math.max(.01, tau * 1e9))); return [{ label: 'Capacitance', value: `${(c * 1e9).toFixed(3)} nF` }, { label: 'Charge', value: `${(c * v * 1e9).toFixed(3)} nC` }, { label: 'Time constant', value: `${(tau * 1e9).toFixed(2)} ns` }] } } as Experiment
+
+function drawAtom(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, label: string, color: string) {
+	ctx.save()
+	ctx.fillStyle = color
+	ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill()
+	ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1; ctx.stroke()
+	ctx.fillStyle = '#111315'; ctx.font = `bold ${Math.max(8, radius * .85)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(label, x, y)
+	ctx.restore()
+}
+
+function drawMoleculeBond(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number) {
+	line(ctx, x1, y1, x2, y2, '#d6e5e5', 3)
+}
+
+function drawBiologyLab(id: string, ctx: CanvasRenderingContext2D, s: ExperimentState, w: number, h: number, title: string) {
+	base(ctx, w, h)
+	const cx = w / 2
+	const cy = h / 2
+	text(ctx, title, 18, 24)
+	if (id === 'biology-diffusion') {
+		const left = num(s, 'leftConcentration')
+		const right = num(s, 'rightConcentration')
+		const mix = 1 - Math.exp(-num(s, 't') * num(s, 'diffusionRate') / 8)
+		const mean = (left + right) / 2
+		const currentLeft = mean + (left - mean) * (1 - mix)
+		const currentRight = mean + (right - mean) * (1 - mix)
+		const boxLeft = w * .1
+		const boxRight = w * .9
+		const boxTop = h * .22
+		const boxBottom = h * .78
+		ctx.strokeStyle = '#91a5a8'; ctx.lineWidth = 3; ctx.strokeRect(boxLeft, boxTop, boxRight - boxLeft, boxBottom - boxTop)
+		line(ctx, cx, boxTop, cx, boxBottom, '#b8e4cf', 2)
+		text(ctx, 'High concentration', boxLeft + 8, boxTop - 8, '#ef9b9b')
+		text(ctx, 'Low concentration', cx + 8, boxTop - 8, '#81a9d6')
+		for (let i = 0; i < 36; i++) {
+			const seedX = ((i * 43) % 97) / 97
+			const seedY = ((i * 67) % 89) / 89
+			const initiallyLeft = seedX < left / Math.max(.01, left + right)
+			const startX = initiallyLeft ? boxLeft + 8 + seedX / Math.max(.01, left / (left + right)) * (cx - boxLeft - 16) : cx + 8 + (seedX - left / (left + right)) / Math.max(.01, right / (left + right)) * (boxRight - cx - 16)
+			const targetX = boxLeft + 12 + (((i * 31) % 91) / 91) * (boxRight - boxLeft - 24)
+			const x = startX + (targetX - startX) * mix + Math.sin(num(s, 't') * 1.8 + i) * 4
+			const y = boxTop + 12 + seedY * (boxBottom - boxTop - 24) + Math.cos(num(s, 't') * 1.3 + i) * 4
+			ctx.fillStyle = '#c98bdf'; ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill()
+		}
+		text(ctx, 'Net movement: high → low concentration', 18, h - 18, '#81d6a3')
+		return
+	}
+	if (id === 'biology-osmosis') {
+		const outside = num(s, 'soluteOutside')
+		const inside = num(s, 'soluteInside')
+		const permeability = num(s, 'permeability')
+		const radius = Math.max(56, Math.min(Math.min(w, h) * .32, 82 + (inside - outside) * permeability * Math.min(num(s, 't'), 8) * 1.8))
+		ctx.strokeStyle = '#91a5a8'; ctx.lineWidth = 2; ctx.strokeRect(w * .08, h * .22, w * .84, h * .56)
+		ctx.fillStyle = 'rgba(129,169,214,.14)'; ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI * 2); ctx.fill()
+		ctx.strokeStyle = '#b8e4cf'; ctx.lineWidth = 4; ctx.stroke()
+		for (let i = 0; i < 18; i++) {
+			const angle = i * 2.4
+			const distance = radius + 16 + ((i * 13) % 48)
+			const x = cx + Math.cos(angle + num(s, 't') * .35) * distance
+			const y = cy + Math.sin(angle + num(s, 't') * .35) * distance * .68
+			ctx.fillStyle = '#81a9d6'; ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill()
+		}
+		for (let i = 0; i < 8; i++) {
+			const angle = i * 2.4
+			ctx.fillStyle = '#d4b36a'; ctx.beginPath(); ctx.arc(cx + Math.cos(angle) * radius * .55, cy + Math.sin(angle) * radius * .55, 4, 0, Math.PI * 2); ctx.fill()
+		}
+		const flow = (inside - outside) * permeability
+		const flowText = flow > .05 ? 'Water enters cell' : flow < -.05 ? 'Water leaves cell' : 'No net water movement'
+		const flowColor = flow > .05 ? '#81d6a3' : flow < -.05 ? '#ef9b9b' : '#f2f0eb'
+		line(ctx, cx, cy - radius - 30, cx, cy - radius - 8, flowColor, 3)
+		text(ctx, flowText, 18, h - 18, flowColor)
+		return
+	}
+	if (id === 'biology-active-transport') {
+		const membraneX = cx
+		const membraneTop = h * .25
+		const membraneBottom = h * .76
+		line(ctx, membraneX - 7, membraneTop, membraneX - 7, membraneBottom, '#81a9d6', 3)
+		line(ctx, membraneX + 7, membraneTop, membraneX + 7, membraneBottom, '#81a9d6', 3)
+		ctx.fillStyle = '#c98bdf'; ctx.fillRect(membraneX - 22, cy - 35, 44, 70)
+		text(ctx, 'ATP pump', membraneX - 30, cy - 48, '#c98bdf')
+		const cycles = num(s, 't') * num(s, 'pumpRate') * num(s, 'atp') / 10
+		for (let i = 0; i < 8; i++) {
+			const progress = Math.max(0, Math.min(1, cycles - i))
+			const y = membraneTop + 25 + i * (membraneBottom - membraneTop - 50) / 7
+			const x = w * .28 + (w * .44) * progress
+			ctx.fillStyle = '#f4df9f'; ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill()
+		}
+		line(ctx, w * .3, cy + 60, w * .72, cy + 60, '#81d6a3', 2)
+		text(ctx, 'Low ion concentration', w * .12, cy - 4, '#81a9d6')
+		text(ctx, 'High ion concentration', w * .72, cy - 4, '#ef9b9b')
+		text(ctx, `ATP → ADP + Pi   ·   ${Math.floor(cycles)} ions pumped`, 18, h - 18, '#81d6a3')
+		return
+	}
+	if (id === 'biology-microscope') {
+		const standX = w * .32
+		const objective = num(s, 'objective')
+		const focus = num(s, 'focus')
+		ctx.strokeStyle = '#91a5a8'; ctx.lineWidth = 15; ctx.lineCap = 'round'
+		ctx.beginPath(); ctx.moveTo(standX - 42, h * .82); ctx.lineTo(standX + 12, h * .82); ctx.lineTo(standX + 20, h * .38); ctx.lineTo(standX - 16, h * .2); ctx.stroke()
+		ctx.strokeStyle = '#d4b36a'; ctx.lineWidth = 20; ctx.beginPath(); ctx.moveTo(standX - 16, h * .2); ctx.lineTo(standX + 22, h * .34); ctx.stroke()
+		ctx.fillStyle = '#81a9d6'; ctx.fillRect(standX - 13, h * .39, 68, 12)
+		ctx.fillStyle = '#d6e5e5'; ctx.fillRect(standX + 40, h * .14, 14, 34)
+		ctx.fillStyle = '#d6e5e5'; ctx.fillRect(standX + 32, h * .38, 12, 29)
+		line(ctx, standX - 48, h * .57, standX + 55, h * .57, '#d4b36a', 5)
+		ctx.fillStyle = '#81d6a3'; ctx.beginPath(); ctx.arc(standX + 4, h * .57, 8, 0, Math.PI * 2); ctx.fill()
+		const viewX = w * .72
+		const viewY = cy
+		const viewRadius = Math.min(w, h) * .27
+		ctx.save(); ctx.beginPath(); ctx.arc(viewX, viewY, viewRadius, 0, Math.PI * 2); ctx.clip()
+		ctx.fillStyle = '#e8eadc'; ctx.fillRect(viewX - viewRadius, viewY - viewRadius, viewRadius * 2, viewRadius * 2)
+		ctx.filter = `blur(${(1 - focus) * 3}px)`
+		for (let i = 0; i < 15; i++) {
+			const angle = i * 2.4 + num(s, 't') * .08
+			const distance = ((i * 19) % 83) / 100 * viewRadius
+			const x = viewX + Math.cos(angle) * distance
+			const y = viewY + Math.sin(angle) * distance
+			ctx.fillStyle = i % 2 ? '#6aa78d' : '#7b91bd'
+			ctx.beginPath(); ctx.ellipse(x, y, 5 + objective * .7, 3 + objective * .4, angle, 0, Math.PI * 2); ctx.fill()
+		}
+		ctx.filter = 'none'; ctx.restore()
+		ctx.strokeStyle = '#d4b36a'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(viewX, viewY, viewRadius, 0, Math.PI * 2); ctx.stroke()
+		text(ctx, `${(objective * 10).toFixed(0)}× total magnification`, viewX - 62, h - 18, '#81d6a3')
+		return
+	}
+	if (id === 'biology-endocytosis' || id === 'biology-exocytosis') {
+		const phase = (num(s, 't') * num(s, 'vesicleRate')) % 4 / 4
+		const endocytosis = id === 'biology-endocytosis'
+		const membraneY = cy
+		const vesicleX = cx
+		const vesicleY = endocytosis ? h * .24 + phase * h * .48 : h * .76 - phase * h * .48
+		const radius = 30 + Math.sin(phase * Math.PI) * 8
+		ctx.strokeStyle = '#81a9d6'; ctx.lineWidth = 5
+		ctx.beginPath()
+		if (endocytosis && phase > .35 && phase < .72) {
+			ctx.moveTo(w * .08, membraneY); ctx.lineTo(cx - radius, membraneY)
+			ctx.arc(cx, membraneY, radius, Math.PI, 0, true)
+			ctx.lineTo(w * .92, membraneY)
+		} else if (!endocytosis && phase > .35 && phase < .72) {
+			ctx.moveTo(w * .08, membraneY); ctx.lineTo(cx - radius, membraneY)
+			ctx.arc(cx, membraneY, radius, Math.PI, 0, false)
+			ctx.lineTo(w * .92, membraneY)
+		} else {
+			ctx.moveTo(w * .08, membraneY); ctx.lineTo(w * .92, membraneY)
+		}
+		ctx.stroke()
+		ctx.fillStyle = 'rgba(201,139,223,.2)'; ctx.strokeStyle = '#c98bdf'; ctx.lineWidth = 3
+		ctx.beginPath(); ctx.arc(vesicleX, vesicleY, radius, 0, Math.PI * 2); ctx.fill(); ctx.stroke()
+		for (let i = 0; i < 5; i++) {
+			const angle = i * Math.PI * 2 / 5 + num(s, 't') * .2
+			ctx.fillStyle = '#f4df9f'; ctx.beginPath(); ctx.arc(vesicleX + Math.cos(angle) * radius * .48, vesicleY + Math.sin(angle) * radius * .48, 4, 0, Math.PI * 2); ctx.fill()
+		}
+		text(ctx, 'Extracellular space', 18, h * .23, '#81a9d6')
+		text(ctx, 'Cytoplasm', 18, h * .78, '#81d6a3')
+		text(ctx, `${endocytosis ? 'Membrane invaginates · cargo enters' : 'Vesicle fuses · cargo released'} · ATP`, 18, h - 18, '#81d6a3')
+	}
+}
+
 function drawChemistryScene(id: string, ctx: CanvasRenderingContext2D, s: ExperimentState, w: number, h: number, title: string) {
+	if (id.startsWith('biology-') && id !== 'biology-cells' && id !== 'biology-cycles') {
+		drawBiologyLab(id, ctx, s, w, h, title)
+		return
+	}
 	base(ctx, w, h)
 	const cx = w / 2; const cy = h / 2
 	text(ctx, title, 18, 24)
@@ -165,6 +327,46 @@ function drawChemistryScene(id: string, ctx: CanvasRenderingContext2D, s: Experi
 	if (id === 'electrochemistry') {
 		ctx.fillStyle = '#81a9d6'; ctx.fillRect(cx - 150, cy - 55, 105, 120); ctx.fillStyle = '#d4b36a'; ctx.fillRect(cx + 45, cy - 55, 105, 120); line(ctx, cx - 95, cy - 55, cx - 95, cy - 110, '#d4b36a', 5); line(ctx, cx + 95, cy - 55, cx + 95, cy - 110, '#81d6a3', 5); line(ctx, cx - 95, cy - 110, cx + 95, cy - 110, '#e5e5e5', 3); line(ctx, cx - 45, cy + 10, cx + 45, cy + 10, '#c98bdf', 5); for (let i = 0; i < 5; i++) { ctx.fillStyle = '#f4df9f'; ctx.beginPath(); ctx.arc(cx - 90 + ((num(s, 't') * 55 + i * 36) % 180), cy - 110, 4, 0, Math.PI * 2); ctx.fill() } text(ctx, 'Salt bridge · electron flow', 18, h - 18, '#81d6a3'); return
 	}
+	if (id === 'chemical-reactions') {
+		const reactants = Math.max(1, num(s, 'reactants'))
+		const moleculeCount = Math.max(2, Math.min(6, Math.ceil(reactants / 2)))
+		const reacted = Math.min(moleculeCount, num(s, 't') * num(s, 'rate') / reactants * moleculeCount)
+		const chamberLeft = w * .1
+		const chamberRight = w * .9
+		ctx.strokeStyle = '#d6e5e5'; ctx.lineWidth = 3
+		ctx.beginPath(); ctx.moveTo(chamberLeft, cy - 75); ctx.lineTo(chamberLeft + 18, cy + 85); ctx.lineTo(chamberRight - 18, cy + 85); ctx.lineTo(chamberRight, cy - 75); ctx.stroke()
+		ctx.fillStyle = 'rgba(129,169,214,.22)'; ctx.fillRect(chamberLeft + 19, cy + 10, chamberRight - chamberLeft - 38, 74)
+		text(ctx, 'NaOH + HCl', chamberLeft + 8, cy - 91, '#81a9d6')
+		text(ctx, 'NaCl + H₂O', chamberRight - 108, cy - 91, '#81d6a3')
+		line(ctx, cx - 42, cy - 56, cx + 42, cy - 56, '#d4b36a', 2)
+		text(ctx, '→', cx - 5, cy - 50, '#d4b36a')
+		for (let i = 0; i < moleculeCount; i++) {
+			const fraction = Math.max(0, Math.min(1, reacted - i))
+			const moleculeX = chamberLeft + 78 + fraction * (chamberRight - chamberLeft - 156)
+			const moleculeY = cy + 28 + (i % 3) * 20 + Math.sin(num(s, 't') * 2 + i) * 5
+			const opacity = 0.65 + Math.sin(num(s, 't') * 3 + i) * .15
+			ctx.save(); ctx.globalAlpha = opacity
+			if (fraction < .5) {
+				drawMoleculeBond(ctx, moleculeX - 15, moleculeY, moleculeX - 3, moleculeY)
+				drawAtom(ctx, moleculeX - 42, moleculeY, 11, 'Na⁺', '#81a9d6')
+				drawAtom(ctx, moleculeX - 15, moleculeY, 10, 'O', '#d86658')
+				drawAtom(ctx, moleculeX - 3, moleculeY, 8, 'H', '#f2f0eb')
+				drawAtom(ctx, moleculeX + 22, moleculeY, 9, 'H⁺', '#f2f0eb')
+				drawAtom(ctx, moleculeX + 43, moleculeY, 11, 'Cl⁻', '#81d6a3')
+			} else {
+				drawAtom(ctx, moleculeX - 30, moleculeY, 11, 'Na⁺', '#81a9d6')
+				drawAtom(ctx, moleculeX - 10, moleculeY, 11, 'Cl⁻', '#81d6a3')
+				drawMoleculeBond(ctx, moleculeX + 11, moleculeY, moleculeX + 27, moleculeY - 5)
+				drawMoleculeBond(ctx, moleculeX + 11, moleculeY, moleculeX + 27, moleculeY + 5)
+				drawAtom(ctx, moleculeX + 11, moleculeY, 10, 'O', '#d86658')
+				drawAtom(ctx, moleculeX + 27, moleculeY - 5, 7, 'H', '#f2f0eb')
+				drawAtom(ctx, moleculeX + 27, moleculeY + 5, 7, 'H', '#f2f0eb')
+			}
+			ctx.restore()
+		}
+		text(ctx, `Neutralization · ${Math.min(reactants, num(s, 't') * num(s, 'rate')).toFixed(1)} reaction units`, 18, h - 18, '#81d6a3')
+		return
+	}
 	if (id === 'bonding' || id === 'vsepr') { const distance = id === 'vsepr' ? 85 : 70; ctx.strokeStyle = '#d6e5e5'; ctx.lineWidth = 8; for (let i = 0; i < 4; i++) line(ctx, cx, cy, cx + Math.cos(i * Math.PI / 2) * distance, cy + Math.sin(i * Math.PI / 2) * distance, '#d6e5e5', 5); ctx.fillStyle = '#d86658'; ctx.beginPath(); ctx.arc(cx, cy, 28, 0, Math.PI * 2); ctx.fill(); for (let i = 0; i < 4; i++) { ctx.fillStyle = '#81d6a3'; ctx.beginPath(); ctx.arc(cx + Math.cos(i * Math.PI / 2 + num(s, 't') * .8) * (distance * .55), cy + Math.sin(i * Math.PI / 2 + num(s, 't') * .8) * (distance * .55), 5, 0, Math.PI * 2); ctx.fill() } text(ctx, id === 'vsepr' ? 'Electron-pair geometry' : 'Shared electron pairs', 18, h - 18, '#81d6a3'); return }
 	ctx.strokeStyle = '#d6e5e5'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(cx - 90, cy - 80); ctx.lineTo(cx - 65, cy + 80); ctx.lineTo(cx + 65, cy + 80); ctx.lineTo(cx + 90, cy - 80); ctx.stroke(); ctx.fillStyle = '#81a9d6'; ctx.fillRect(cx - 64, cy + 5, 128, 72); for (let i = 0; i < 10; i++) { ctx.fillStyle = i % 2 ? '#d4b36a' : '#d86658'; ctx.beginPath(); const x = cx - 45 + (i % 5) * 22 + Math.sin(num(s, 't') * 1.6 + i) * 5; const y = cy + 22 + Math.floor(i / 5) * 24 + Math.cos(num(s, 't') * 1.6 + i) * 4; ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.fill() } text(ctx, id === 'gas-laws' ? 'Gas chamber' : id === 'chemical-reactions' ? 'Reaction vessel' : 'Reactant beaker', 18, h - 18, '#81d6a3')
 }
@@ -178,8 +380,45 @@ const electrochem = chemistryPool('electrochemistry', 'Electrochemistry — Galv
 const vsepr = chemistryPool('vsepr', 'Molecular Geometry — VSEPR', [n('bonding', 'Bonding pairs', 2, 6, 1, 4), n('lone', 'Lone pairs', 0, 3, 1, 0), n('rotation', 'Rotation', -180, 180, 1, 0)], s => [{ label: 'Geometry', value: num(s, 'bonding') === 2 ? 'Linear' : num(s, 'lone') === 1 ? 'Trigonal pyramidal' : 'Tetrahedral' }, { label: 'Bond angle', value: num(s, 'bonding') === 2 ? '180°' : num(s, 'lone') ? '107°' : '109.5°' }, { label: 'Polarity', value: num(s, 'lone') ? 'Asymmetric' : 'Symmetric' }])
 const bonding = chemistryPool('bonding', 'Chemical Bonding — Ionic & Covalent', [n('electronegativityA', 'Atom A electronegativity', 0, 4, .1, 2.5), n('electronegativityB', 'Atom B electronegativity', 0, 4, .1, 3.5), n('sharing', 'Electron sharing', 0, 1, .01, .5)], s => [{ label: 'Bond type', value: Math.abs(num(s, 'electronegativityA') - num(s, 'electronegativityB')) > 1.7 ? 'Ionic' : 'Covalent' }, { label: 'Polarity', value: Math.abs(num(s, 'electronegativityA') - num(s, 'electronegativityB')) > .4 ? 'Polar' : 'Non-polar' }])
 const reaction = chemistryPool('chemical-reactions', 'Chemical Reactions — Conservation of Matter', [n('reactants', 'Reactant particles', 1, 20, 1, 10), n('temperature', 'Temperature', 200, 800, 1, 300), n('rate', 'Reaction rate', .1, 5, .1, 1)], s => [{ label: 'Reactants remaining', value: `${Math.max(0, num(s, 'reactants') - num(s, 't') * num(s, 'rate')).toFixed(2)}` }, { label: 'Products formed', value: `${Math.min(num(s, 'reactants'), num(s, 't') * num(s, 'rate')).toFixed(2)}` }, { label: 'Matter', value: 'Conserved' }])
+reaction.step = (s, dt) => {
+	const temperature = Math.max(1, num(s, 'temperature'))
+	const temperatureFactor = Math.exp((5000 / 8.314) * (1 / 300 - 1 / temperature))
+	s.t = num(s, 't') + dt * temperatureFactor
+}
 const cellLab = chemistryPool('biology-cells', 'Biology — Cell Structure', [n('membrane', 'Membrane permeability', 0, 1, .01, .5), n('nutrients', 'Nutrients', 0, 10, .1, 6), n('energy', 'Cell energy', 0, 10, .1, 5)], s => [{ label: 'Cell status', value: num(s, 'energy') > 2 ? 'Active' : 'Stressed' }, { label: 'Transport', value: num(s, 'membrane') > .6 ? 'High permeability' : 'Selective transport' }, { label: 'ATP reserve', value: `${(num(s, 'energy') * .8).toFixed(2)}` }])
 const cycleLab = chemistryPool('biology-cycles', 'Biology — Cell Cycles', [n('phase', 'Cycle phase', 0, 4, 1, 0), n('growth', 'Growth rate', 0, 2, .1, 1), n('checkpoint', 'Checkpoint strictness', 0, 1, .01, .7)], s => [{ label: 'Phase', value: ['G1', 'S', 'G2', 'M', 'G1'][Math.floor(num(s, 'phase'))] }, { label: 'Progress', value: `${((num(s, 't') * num(s, 'growth')) % 1 * 100).toFixed(0)}%` }, { label: 'Checkpoint', value: num(s, 'checkpoint') > .5 ? 'Protected' : 'Permissive' }])
+const biologyPool = (id: string, title: string, params: ExperimentParam[], readouts: Experiment['readouts']): Experiment => ({
+	id,
+	category: 'Biology',
+	title,
+	params,
+	init: () => ({ t: 0 }),
+	step: (s, dt) => { s.t = num(s, 't') + dt },
+	draw: (ctx, s, w, h) => drawBiologyLab(id, ctx, s, w, h, title),
+	readouts,
+})
+const diffusionLab = biologyPool('biology-diffusion', 'Biology — Diffusion', [n('leftConcentration', 'Initial high concentration', 1, 10, .1, 8), n('rightConcentration', 'Initial low concentration', 0, 8, .1, 2), n('diffusionRate', 'Diffusion rate', .1, 4, .1, 1)], s => {
+	const mix = 1 - Math.exp(-num(s, 't') * num(s, 'diffusionRate') / 8)
+	const mean = (num(s, 'leftConcentration') + num(s, 'rightConcentration')) / 2
+	return [{ label: 'High-side concentration', value: `${(mean + (num(s, 'leftConcentration') - mean) * (1 - mix)).toFixed(2)}` }, { label: 'Low-side concentration', value: `${(mean + (num(s, 'rightConcentration') - mean) * (1 - mix)).toFixed(2)}` }, { label: 'Net movement', value: 'High → low concentration' }]
+})
+const osmosisLab = biologyPool('biology-osmosis', 'Biology — Osmosis', [n('soluteOutside', 'Solute outside cell', 0, 10, .1, 3), n('soluteInside', 'Solute inside cell', 0, 10, .1, 7), n('permeability', 'Water permeability', 0, 1, .01, .6)], s => {
+	const flow = (num(s, 'soluteInside') - num(s, 'soluteOutside')) * num(s, 'permeability')
+	return [{ label: 'Water movement', value: flow > .05 ? 'Into the cell' : flow < -.05 ? 'Out of the cell' : 'At equilibrium' }, { label: 'Cell response', value: flow > .05 ? 'Swelling' : flow < -.05 ? 'Shrinking' : 'Stable' }, { label: 'Membrane', value: 'Water-permeable; solute-selective' }]
+})
+const activeTransportLab = biologyPool('biology-active-transport', 'Biology — Active Transport', [n('atp', 'ATP available', 0, 10, .1, 8), n('pumpRate', 'Pump cycle rate', .1, 4, .1, 1.5)], s => {
+	const cycles = num(s, 't') * num(s, 'pumpRate') * num(s, 'atp') / 10
+	return [{ label: 'Transported ions', value: `${Math.floor(cycles)}` }, { label: 'Direction', value: 'Low → high concentration' }, { label: 'Energy', value: num(s, 'atp') > 0 ? 'ATP-powered' : 'Stopped — no ATP' }]
+})
+const microscopeLab = biologyPool('biology-microscope', 'Biology — Microscope', [n('objective', 'Objective magnification', 1, 10, 1, 4), n('focus', 'Focus', 0, 1, .01, .8)], s => [{ label: 'Total magnification', value: `${(num(s, 'objective') * 10).toFixed(0)}×` }, { label: 'Focus', value: num(s, 'focus') > .8 ? 'Sharp' : num(s, 'focus') > .35 ? 'Adjusting' : 'Out of focus' }, { label: 'Eyepiece', value: '10×' }])
+const endocytosisLab = biologyPool('biology-endocytosis', 'Biology — Endocytosis', [n('vesicleRate', 'Vesicle cycle rate', .1, 3, .1, 1)], s => {
+	const phase = (num(s, 't') * num(s, 'vesicleRate')) % 4 / 4
+	return [{ label: 'Process stage', value: phase < .25 ? 'Cargo binding' : phase < .5 ? 'Membrane invagination' : phase < .75 ? 'Vesicle formation' : 'Vesicle enters cytoplasm' }, { label: 'Cargo', value: 'Moving into cell' }, { label: 'Transport', value: 'Vesicle-mediated' }]
+})
+const exocytosisLab = biologyPool('biology-exocytosis', 'Biology — Exocytosis', [n('vesicleRate', 'Vesicle cycle rate', .1, 3, .1, 1)], s => {
+	const phase = (num(s, 't') * num(s, 'vesicleRate')) % 4 / 4
+	return [{ label: 'Process stage', value: phase < .25 ? 'Vesicle moves to membrane' : phase < .5 ? 'Vesicle docking' : phase < .75 ? 'Membrane fusion' : 'Cargo released outside' }, { label: 'Cargo', value: 'Moving out of cell' }, { label: 'Transport', value: 'Vesicle-mediated' }]
+})
 const cathodeRay: Experiment = {
 	id: 'cathode-ray',
 	category: 'Chemistry',
@@ -352,7 +591,7 @@ const rutherford: Experiment = {
 	],
 }
 
-export const EXPERIMENTS: Experiment[] = [projectile, incline, oscillator, circular, collisions, waves, electricity, forceLab, magnetismLab, capacitor, stoichiometry, gas, titration, equilibrium, kinetics, electrochem, vsepr, bonding, reaction, cathodeRay, bohrModel, rutherford, cellLab, cycleLab]
+export const EXPERIMENTS: Experiment[] = [projectile, incline, oscillator, circular, collisions, waves, electricity, forceLab, magnetismLab, capacitor, stoichiometry, gas, titration, equilibrium, kinetics, electrochem, vsepr, bonding, reaction, cathodeRay, bohrModel, rutherford, cellLab, cycleLab, diffusionLab, osmosisLab, activeTransportLab, microscopeLab, endocytosisLab, exocytosisLab]
 export function experimentById(id: string) { return EXPERIMENTS.find((experiment) => experiment.id === id) || EXPERIMENTS[0] }
 export function applyExperimentParams(experiment: Experiment, values: Record<string, number>): ExperimentState {
 	const state = experiment.init()

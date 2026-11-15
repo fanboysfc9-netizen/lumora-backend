@@ -17,7 +17,7 @@ import { decideAdaptation } from 'core/cortex-adapt/adaptationEngine'
 import { toSystemInstruction } from 'core/cortex-adapt/promptAdapter'
 import { processInteractionOutcome } from 'core/cortex-adapt/feedbackLoop'
 import { analyzeConversation } from 'core/cortex-adapt/behaviorAnalyzer'
-import { predictBeforeResponse, adjustDecisionWithPrediction, simulateUserReaction, decideMidResponseAction } from 'core/cortex-adapt/predictiveEngine'
+import { predictBeforeResponse, adjustDecisionWithPrediction } from 'core/cortex-adapt/predictiveEngine'
 import globalEngine from 'core/cortex-adapt/globalEngine'
 import { adjustDecisionWithGlobalTrends } from 'core/cortex-adapt/ruleEvolution'
 import knowledgeRouter from 'core/cortex-adapt/knowledgeRouter'
@@ -241,105 +241,8 @@ class CognitaService {
     }
     const definitionStyleHomework = isDefinitionStyleHomework(message)
 
-    // Decide whether to use iterative (stepwise) generation to enable mid-response adaptation
-    const needIterative = !definitionStyleHomework && !!approxDecision && (
-      approxDecision.teachingMode === 'guided_breakdown' ||
-      approxDecision.simplificationIntensity > 0.5 ||
-      approxDecision.exampleDensity > 0.6 ||
-      (approxPrediction && (approxPrediction.confusionRisk > 0.45 || approxPrediction.overloadRisk > 0.45))
-    )
-
-    let aiResult: any = null
-
-    if (needIterative) {
-      // Iterative generation: request step 1, simulate reaction, optionally revise, then continue to next steps
-      const maxSteps = 4
-      const partials: string[] = []
-
-      const generateStep = async (stepNum: number, lastAssistant?: string) => {
-        const systemMsg = corePrompt.prompt
-        const userMsg = message
-        const instruction = stepNum === 1
-          ? `Please answer the user's question in up to ${maxSteps} numbered steps. Provide only Step 1 now, labeled 'Step 1:'. Keep it concise (1-3 short paragraphs). Do not include meta commentary or diagnostics.`
-          : `Continue with Step ${stepNum} only. Keep it concise and directly related to the question. If the user seems likely to be confused based on previous steps, keep this step simpler and include a short example.`
-
-        const callMessages: any[] = [
-          { role: 'system', content: systemMsg },
-          { role: 'user', content: userMsg }
-        ]
-        if (lastAssistant) callMessages.push({ role: 'assistant', content: lastAssistant })
-        callMessages.push({ role: 'user', content: instruction })
-
-        const res = await this.ai.createChatCompletion(callMessages as any, { mode })
-        return res
-      }
-
-      try {
-        let lastAssistant: string | null = null
-        for (let step = 1; step <= maxSteps; step++) {
-          const res = await generateStep(step, lastAssistant || undefined)
-          if (!res || !res.success) {
-            // fallback to single-shot if iterative step fails
-            console.warn('[CognitaService] iterative step failed, falling back to single-shot')
-            aiResult = await this.ai.createChatCompletion(messages as any, { mode })
-            break
-          }
-
-          // Extract step text (attempt to parse 'Step <n>:' markers)
-          let text = (res.text || '').trim()
-          const stepRegex = new RegExp(`(?:Step\\s*${step}[:\\.-]\\s*)([\\s\\S]*?)(?=(?:Step\\s*${step+1}[:\\.-]|$))`, 'i')
-          const match = text.match(stepRegex)
-          let stepText = match ? match[1].trim() : (text.split(/\n\n+/).filter(Boolean)[0] || text)
-
-          // Simulate user reaction to this step and decide mid-response action
-          try {
-            const sim = await simulateUserReaction(stepText, profile)
-            const mid = decideMidResponseAction(stepText, sim, profile)
-            if (mid && mid.action) {
-              const reviseInstruction = mid.action === 'simplify'
-                ? 'Please simplify the previous step: shorten sentences and break into smaller sub-steps if helpful. Keep it concise.'
-                : 'Please insert a concise, concrete example illustrating the previous step.'
-
-              const reviseMessages: any[] = [
-                { role: 'system', content: corePrompt.prompt },
-                { role: 'user', content: message },
-                { role: 'assistant', content: stepText },
-                { role: 'user', content: reviseInstruction }
-              ]
-
-              const rev = await this.ai.createChatCompletion(reviseMessages as any, { mode })
-              if (rev && rev.success) {
-                stepText = (rev.text || '').trim()
-              }
-            }
-          } catch (simErr) {
-            console.warn('[CognitaService] simulateUserReaction failed (non-fatal):', (simErr as any)?.message || simErr)
-          }
-
-          partials.push(stepText)
-          lastAssistant = stepText
-
-          // Heuristic: break early if step indicates finality
-          if (/conclude|in summary|final step|that's all/i.test(stepText)) {
-            break
-          }
-
-          // small delay not required; continue to next step
-        }
-
-        if (!aiResult) {
-          const finalText = partials.map((s, i) => `Step ${i + 1}: ${s}`).join('\n\n')
-          aiResult = { success: true, text: finalText, raw: null, partials }
-        }
-      } catch (iterErr) {
-        console.error('[CognitaService] iterative generation error (non-fatal):', (iterErr as any)?.message || iterErr)
-        // fallback to single-shot
-        aiResult = await this.ai.createChatCompletion(messages as any, { mode })
-      }
-    } else {
-      // Single-shot generation when iterative not required
-      aiResult = await this.ai.createChatCompletion(messages as any, { mode })
-    }
+    // Learner-specific adaptation is already included in the prompt; one completion avoids serial model round trips.
+    let aiResult: any = await this.ai.createChatCompletion(messages as any, { mode })
 
     if (!aiResult.success) {
       const diag: any = aiResult.diagnostic || {}
