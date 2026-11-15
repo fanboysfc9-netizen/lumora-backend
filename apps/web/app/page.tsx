@@ -1944,6 +1944,55 @@ export default function Page() {
     const periodEnd = typeof subscription?.current_period_end === 'string' && !Number.isNaN(Date.parse(subscription.current_period_end))
       ? new Date(subscription.current_period_end).toLocaleDateString()
       : null
+    const availablePlans = [
+      {
+        name: 'Free',
+        price: 'GHC 0',
+        description: 'Get started with the essential learning tools.',
+        features: [
+          'Image and data analysis: 5 uses every 12 hours',
+          'Elara and Solara: 5 messages; Nira is free',
+          'Video search: 5 searches per day',
+          'Simulations: 5 accesses every 12 hours',
+          'Homework Helper: 5 accesses every 12 hours'
+        ]
+      },
+      {
+        name: 'Regular',
+        price: 'GHC 49',
+        description: 'Twice the Free plan limits for more room to learn.',
+        features: [
+          'Image and data analysis: 10 uses every 12 hours',
+          'Elara and Solara: 10 messages; Nira is free',
+          'Video search: 10 searches per day',
+          'Simulations: 10 accesses every 12 hours',
+          'Homework Helper: 10 accesses every 12 hours'
+        ]
+      },
+      {
+        name: 'Pro',
+        price: 'GHC 99',
+        description: 'More access for focused, ongoing study.',
+        features: [
+          'Unlimited Elara and Solara messages',
+          'Image and data analysis: unlimited',
+          'Video search: 50 searches per day',
+          'Simulations: 20 accesses',
+          'Unlimited Homework Helper access',
+          'Unlimited project and study plan creation'
+        ]
+      },
+      {
+        name: 'Plus',
+        price: 'GHC 150',
+        description: 'Everything unlocked.',
+        features: [
+          'Everything in Pro, with all features unlocked',
+          'Full access to tutors, analysis, video searches, and simulations',
+          'Unlimited Homework Helper, projects, and study plans'
+        ]
+      }
+    ]
 
     return <section className="workspace-content billing-view">
       <div className="workspace-heading">
@@ -1968,9 +2017,17 @@ export default function Page() {
         <strong>Billing is a placeholder</strong>
         <p>No payments are collected here. Plan selection, checkout, and subscription management will be enabled when billing launches.</p>
       </div>
-      <div className="billing-plan-placeholder">
-        <div><h2>Plan options</h2><p className="workspace-muted">Available plans and pricing will be shown here once they are finalized.</p></div>
-        <button type="button" className="primary-button billing-disabled-action" disabled>Choose a plan · Coming soon</button>
+      <div className="billing-plans-heading"><h2>Available plans</h2><p className="workspace-muted">Prices are per month. Plan features are shown for preview; quotas are not yet enforced.</p></div>
+      <div className="billing-plans-grid">
+        {availablePlans.map((availablePlan) => <article className={`billing-plan-card${availablePlan.name === 'Pro' ? ' billing-plan-featured' : ''}`} key={availablePlan.name}>
+          <div className="billing-plan-header">
+            <h3>{availablePlan.name}</h3>
+            <p>{availablePlan.description}</p>
+            <strong className="billing-plan-price">{availablePlan.price}<span> / month</span></strong>
+          </div>
+          <ul>{availablePlan.features.map((feature) => <li key={feature}>{feature}</li>)}</ul>
+          <button type="button" className="primary-button billing-disabled-action" disabled>{availablePlan.name === 'Free' ? 'Included' : 'Choose plan · Coming soon'}</button>
+        </article>)}
       </div>
     </section>
   }
