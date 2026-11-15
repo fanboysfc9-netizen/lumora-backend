@@ -540,7 +540,7 @@ export default function Page() {
   const [authFormError, setAuthFormError] = useState<string | null>(null)
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin')
-  const [pendingWorkspaceView, setPendingWorkspaceView] = useState<'projects' | 'plans' | null>(null)
+  const [pendingWorkspaceView, setPendingWorkspaceView] = useState<'projects' | 'plans' | 'billing' | null>(null)
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [profileName, setProfileName] = useState('')
   const [profileSaving, setProfileSaving] = useState(false)
@@ -549,7 +549,7 @@ export default function Page() {
   const previousUserIdRef = useRef<string | null>(null)
   const [theme, setTheme] = useState<string>('light')
   const [showStats, setShowStats] = useState(false)
-  const [workspaceView, setWorkspaceView] = useState<'chat' | 'projects' | 'plans' | 'youtube' | 'homework' | 'practice' | 'simulations' | 'resources' | 'wikipedia'>('chat')
+  const [workspaceView, setWorkspaceView] = useState<'chat' | 'projects' | 'plans' | 'billing' | 'youtube' | 'homework' | 'practice' | 'simulations' | 'resources' | 'wikipedia'>('chat')
   const [projects, setProjects] = useState<Project[]>([])
   const [studyPlans, setStudyPlans] = useState<StudyPlan[]>([])
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
@@ -1527,7 +1527,7 @@ export default function Page() {
     }
   }
 
-  function openWorkspace(view: 'chat' | 'projects' | 'plans') {
+  function openWorkspace(view: 'chat' | 'projects' | 'plans' | 'billing') {
     if (view !== 'chat' && !session) {
       setWorkspaceView(view)
       setPendingWorkspaceView(view)
@@ -1934,6 +1934,47 @@ export default function Page() {
     return <section className="workspace-content"><div className="workspace-heading"><div><h1>Study Plans</h1><p className="workspace-muted">Tell Cognita what you want to learn and build a plan around your goal.</p></div><button className="primary-button" onClick={() => session ? setShowPlanForm(true) : setShowAuthModal(true)}>New study plan</button></div>{studyPlans.length === 0 ? <div className="empty-workspace">Your first plan can turn a goal into clear weekly topics and practice.</div> : <div className="workspace-list">{studyPlans.map((plan) => { const topics = plan.study_plan_topics || []; const completed = topics.filter((topic) => topic.completed).length; const next = topics.find((topic) => !topic.completed)?.title || 'Complete'; return <button className="workspace-list-item" key={plan.id} onClick={() => setSelectedPlan(plan)}><strong>{plan.title}</strong><span>{plan.subject} · {plan.learner_level} · {topics.length ? Math.round((completed / topics.length) * 100) : 0}%</span><small>{plan.objective || 'Learning goal not set'} · Next: {next}</small></button> })}</div>}</section>
   }
 
+  function renderBillingView() {
+    const subscription = account?.subscription
+    const plan = account?.plan
+    const planName = typeof plan?.display_name === 'string'
+      ? plan.display_name
+      : typeof plan?.name === 'string' ? plan.name : null
+    const status = typeof subscription?.status === 'string' ? subscription.status : null
+    const periodEnd = typeof subscription?.current_period_end === 'string' && !Number.isNaN(Date.parse(subscription.current_period_end))
+      ? new Date(subscription.current_period_end).toLocaleDateString()
+      : null
+
+    return <section className="workspace-content billing-view">
+      <div className="workspace-heading">
+        <div><h1>Billing</h1><p className="workspace-muted">View your plan and billing options.</p></div>
+        <span className="billing-preview-badge">Preview</span>
+      </div>
+      <div className="billing-card-grid">
+        <article className="billing-card">
+          <span className="billing-card-label">Current plan</span>
+          <strong className="billing-card-value">{planName || 'No plan linked'}</strong>
+          <span className="workspace-muted">{status ? `Subscription ${status}` : 'Subscription details will appear here when available.'}</span>
+          {periodEnd && <span className="workspace-muted">Current period ends {periodEnd}</span>}
+        </article>
+        <article className="billing-card">
+          <span className="billing-card-label">Payments & invoices</span>
+          <strong className="billing-card-value">Not connected</strong>
+          <span className="workspace-muted">Payment processing and invoice history are not available yet.</span>
+          <button type="button" className="text-button billing-disabled-action" disabled>Manage billing · Coming soon</button>
+        </article>
+      </div>
+      <div className="billing-notice" role="note">
+        <strong>Billing is a placeholder</strong>
+        <p>No payments are collected here. Plan selection, checkout, and subscription management will be enabled when billing launches.</p>
+      </div>
+      <div className="billing-plan-placeholder">
+        <div><h2>Plan options</h2><p className="workspace-muted">Available plans and pricing will be shown here once they are finalized.</p></div>
+        <button type="button" className="primary-button billing-disabled-action" disabled>Choose a plan · Coming soon</button>
+      </div>
+    </section>
+  }
+
   function sendHomeworkRequest(event: React.FormEvent) {
     event.preventDefault()
     const details = homeworkPrompt.trim()
@@ -2124,6 +2165,7 @@ export default function Page() {
           <button className="nav-item nav-icon-item" onClick={() => setShowStats(true)}><Icon name="user" /> <span>Memory</span></button>
           <div className="nav-section-label">Account</div>
           <button className="nav-item nav-icon-item" onClick={() => setShowStats(true)}><Icon name="settings" /> <span>Settings</span></button>
+          <button type="button" className={`nav-item nav-icon-item ${workspaceView === 'billing' ? 'active' : ''}`} onClick={() => openWorkspace('billing')}><Icon name="settings" /> <span>Billing</span></button>
           {session && <button className="nav-item nav-icon-item" onClick={() => signOut()}><Icon name="logout" /> <span>Log out</span></button>}
         </nav>
 
@@ -2144,7 +2186,7 @@ export default function Page() {
       </aside>
       {mobileNavOpen && <button className="sidebar-backdrop" aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} />}
       <main className="main" style={{ width: '100%' }}>
-        {workspaceView !== 'chat' ? <div className="workspace-panel-shell"><button type="button" className="mobile-workspace-back" onClick={() => setWorkspaceView('chat')} aria-label="Back to chat"> <Icon name="arrow-left" /> <span>Back to chat</span></button>{workspaceError && <div className="workspace-error" role="alert">{workspaceError}</div>}{workspaceView === 'projects' ? renderProjectView() : workspaceView === 'plans' ? renderPlanView() : workspaceView === 'homework' ? renderHomeworkView() : workspaceView === 'practice' ? renderPracticeView() : workspaceView === 'simulations' ? renderExperimentRegistryView() : workspaceView === 'resources' ? renderResourcesView() : workspaceView === 'wikipedia' ? renderWikipediaView() : renderYouTubeView()}</div> : <div className="chat-container" style={{ width: '100%' }}>
+        {workspaceView !== 'chat' ? <div className="workspace-panel-shell"><button type="button" className="mobile-workspace-back" onClick={() => setWorkspaceView('chat')} aria-label="Back to chat"> <Icon name="arrow-left" /> <span>Back to chat</span></button>{workspaceError && <div className="workspace-error" role="alert">{workspaceError}</div>}{workspaceView === 'projects' ? renderProjectView() : workspaceView === 'plans' ? renderPlanView() : workspaceView === 'billing' ? renderBillingView() : workspaceView === 'homework' ? renderHomeworkView() : workspaceView === 'practice' ? renderPracticeView() : workspaceView === 'simulations' ? renderExperimentRegistryView() : workspaceView === 'resources' ? renderResourcesView() : workspaceView === 'wikipedia' ? renderWikipediaView() : renderYouTubeView()}</div> : <div className="chat-container" style={{ width: '100%' }}>
           <div className="chat-area">
             <div className="chat-header">
               <div className="chat-header-left">
