@@ -13,7 +13,7 @@ Environment variables (.env):
 - `ALLOWED_ORIGINS` — optional comma-separated list of additional trusted origins for CORS
 - `SUPABASE_URL` — server-side Supabase project URL
 - `SUPABASE_ANON_KEY` — server-side Supabase anon/publishable key used with the verified bearer token
-- `SERP_API_KEY` — SerpAPI key used by the Article section to find Wikipedia pages (`SERPAPI_KEY` is also accepted)
+- `SERP_API_KEY` — optional SerpAPI key used first by the Article section to find Wikipedia pages (`SERPAPI_KEY` is also accepted); the Wikipedia API is used if SerpAPI is unavailable or has no usable Wikipedia links
 - `PORT` — port to run the API (default 4000)
 
 Dev commands:
@@ -33,6 +33,6 @@ API endpoints:
 - `GET /api/account/subscription` — authenticated subscription state
 - `GET /api/account/entitlements` — authenticated effective entitlements
 - `GET /api/account/usage` — authenticated current-period usage
-- `POST /api/wikipedia/search` — body: `{ query }` — finds English Wikipedia pages through SerpAPI and returns readable article text
+- `POST /api/wikipedia/search` — body: `{ query }` — finds English Wikipedia pages through SerpAPI, falling back to Wikipedia's search API, and returns readable article text
 
 Account and entitlement authority is stored in Supabase. The TypeScript API uses the verified Supabase bearer context; Firebase/in-memory persistence remains temporary for chat data only.

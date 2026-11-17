@@ -11,8 +11,35 @@ function cleanQuery(value: unknown) {
 function wikipediaUrl(value: string) {
   try {
     const url = new URL(value)
-    return url.hostname.toLowerCase() === 'en.wikipedia.org' ? url.toString() : undefined
+    const hostname = url.hostname.toLowerCase()
+    if (hostname !== 'en.wikipedia.org' && hostname !== 'en.m.wikipedia.org') return undefined
+    if (!url.pathname.startsWith('/wiki/')) return undefined
+    url.hostname = 'en.wikipedia.org'
+    return url.toString()
   } catch { return undefined }
+}
+
+async function searchWikipediaPages(query: string) {
+  const apiUrl = new URL('https://en.wikipedia.org/w/api.php')
+  apiUrl.search = new URLSearchParams({
+    action: 'query',
+    list: 'search',
+    srsearch: query,
+    srlimit: '5',
+    format: 'json'
+  }).toString()
+  const response = await fetch(apiUrl.toString(), {
+    headers: { accept: 'application/json', 'user-agent': 'Lumora/1.0 (Wikipedia article search)' }
+  })
+  if (!response.ok) throw new Error(`Wikipedia search HTTP ${response.status}`)
+  const data = await response.json() as { query?: { search?: Array<{ title?: string; snippet?: string }> } }
+  return (data.query?.search || [])
+    .filter((result) => Boolean(result.title))
+    .map((result) => ({
+      title: String(result.title),
+      snippet: String(result.snippet || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim(),
+      source: `https://en.wikipedia.org/wiki/${encodeURIComponent(String(result.title).replace(/ /g, '_'))}`
+    }))
 }
 
 async function articleExtract(source: string | undefined) {
@@ -44,14 +71,22 @@ router.post('/search', createOptionalSupabaseAuthMiddleware(), async (req: Reque
   try {
     const query = cleanQuery(req.body?.query)
     if (!query) return res.status(400).json({ ok: false, error: 'question or topic is required' })
-    if (!(process.env.SERP_API_KEY || process.env.SERPAPI_KEY)) {
-      return res.status(503).json({ ok: false, error: 'Article search is not configured.' })
+    const hasSerpApiKey = Boolean(process.env.SERP_API_KEY || process.env.SERPAPI_KEY)
+    let candidates: Array<{ title: string; snippet: string; source?: string }> = []
+    if (hasSerpApiKey) {
+      const scopedResults = await knowledgeRouter.fetchSerpResults(`site:en.wikipedia.org ${query}`, { timeoutMs: 6000 })
+      candidates = scopedResults
+        .map((result) => ({ ...result, source: result.source ? wikipediaUrl(result.source) : undefined }))
+        .filter((result) => Boolean(result.source))
+      if (!candidates.length) {
+        const generalResults = await knowledgeRouter.fetchSerpResults(query, { timeoutMs: 6000 })
+        candidates = generalResults
+          .map((result) => ({ ...result, source: result.source ? wikipediaUrl(result.source) : undefined }))
+          .filter((result) => Boolean(result.source))
+      }
     }
-    const scopedResults = await knowledgeRouter.fetchSerpResults(`site:en.wikipedia.org ${query}`, { timeoutMs: 3500 })
-    const results = scopedResults.length ? scopedResults : await knowledgeRouter.fetchSerpResults(query, { timeoutMs: 3500 })
-    const articles = await Promise.all(results
-      .map((result) => ({ ...result, source: result.source ? wikipediaUrl(result.source) : undefined }))
-      .filter((result) => Boolean(result.source))
+    if (!candidates.length) candidates = await searchWikipediaPages(query)
+    const articles = await Promise.all(candidates
       .slice(0, 5)
       .map(async (result) => ({ ...result, extract: await articleExtract(result.source) })))
     return res.json({ ok: true, query, articles })
